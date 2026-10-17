@@ -229,9 +229,20 @@ func TestProcessWritesAndServesFiles(t *testing.T) {
 	if code, body = e.do(t, "GET", "/api/sessions/"+vid+"/files/highlights_full.mp4", nil); code != 200 || string(body) != "reel" {
 		t.Errorf("reel: %d %q", code, body)
 	}
-	for _, bad := range []string{"..%2F..%2Fsecret.mp4", "notes.txt", ".hidden.mp4"} {
-		if code, _ := e.do(t, "GET", "/api/sessions/"+vid+"/files/"+bad, nil); code == 200 {
-			t.Errorf("file %q served; want rejection", bad)
+	dir := filepath.Join(e.out, "Me at the zoo")
+	for path, content := range map[string]string{
+		filepath.Join(e.out, "secret.mp4"): "SECRET",
+		filepath.Join(dir, "notes.txt"):    "SECRET",
+		filepath.Join(dir, ".hidden.mp4"):  "SECRET",
+	} {
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, bad := range []string{"..%2Fsecret.mp4", "notes.txt", ".hidden.mp4"} {
+		code, body := e.do(t, "GET", "/api/sessions/"+vid+"/files/"+bad, nil)
+		if code != 400 || strings.Contains(string(body), "SECRET") {
+			t.Errorf("file %q: %d %q; want 400 without contents", bad, code, body)
 		}
 	}
 	// SSE sends the current snapshot first
