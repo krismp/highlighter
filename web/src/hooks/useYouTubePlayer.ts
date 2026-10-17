@@ -79,7 +79,9 @@ export function useYouTubePlayer(videoId: string, enabled: boolean) {
     setPreviewing(id);
     const end = start + duration;
     timerRef.current = window.setInterval(() => {
-      if (player.getCurrentTime() >= end) {
+      const t = player.getCurrentTime();
+      // Ignore a stale position from before the seek registers (t < start - 0.5).
+      if ((t >= end && t >= start - 0.5) || player.getPlayerState() === YT.PlayerState.ENDED) {
         player.pauseVideo();
         clearTimer();
         setPreviewing(null);

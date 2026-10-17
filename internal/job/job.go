@@ -160,7 +160,7 @@ func (m *Manager) Start(req Request) (View, error) {
 
 	v := m.update(j, func() {})
 	for i := range req.Tasks {
-		go m.runClip(j, i)
+		go m.runClip(j, i, false)
 	}
 	return v, nil
 }
@@ -210,7 +210,7 @@ func (m *Manager) Retry(sessionID, clipID string) (View, error) {
 	if !retryable {
 		return v, ErrNotRetryable
 	}
-	go m.runClip(j, idx)
+	go m.runClip(j, idx, true)
 	return v, nil
 }
 
@@ -284,7 +284,9 @@ func (m *Manager) update(j *job, fn func()) View {
 	return v
 }
 
-func (m *Manager) runClip(j *job, i int) {
+// runClip cuts one clip; refreshFirst forces stream URLs to be re-resolved on
+// the first attempt (manual retries, whose cached URLs may have expired).
+func (m *Manager) runClip(j *job, i int, refreshFirst bool) {
 	j.sem <- struct{}{}
 	defer func() { <-j.sem }()
 	var err error
@@ -296,7 +298,7 @@ func (m *Manager) runClip(j *job, i int) {
 			c := &j.clips[i]
 			c.Status, c.Attempt, c.Progress, c.Error = Processing, attempt+1, 0, ""
 		})
-		if err = m.cutOnce(j, i, attempt > 0); err == nil {
+		if err = m.cutOnce(j, i, attempt > 0 || refreshFirst); err == nil {
 			break
 		}
 	}

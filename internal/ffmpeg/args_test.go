@@ -18,8 +18,8 @@ func TestCutArgsSplitStreamsVideoToolbox(t *testing.T) {
 	})
 	want := []string{
 		"-hide_banner", "-nostdin", "-y", "-loglevel", "error", "-progress", "pipe:1", "-nostats",
-		"-reconnect", "1", "-reconnect_delay_max", "5", "-headers", "Accept: */*\r\nUser-Agent: UA\r\n", "-ss", "754.500", "-i", "https://v",
-		"-reconnect", "1", "-reconnect_delay_max", "5", "-ss", "754.500", "-i", "https://a",
+		"-reconnect", "1", "-reconnect_delay_max", "5", "-rw_timeout", "30000000", "-headers", "Accept: */*\r\nUser-Agent: UA\r\n", "-ss", "754.500", "-i", "https://v",
+		"-reconnect", "1", "-reconnect_delay_max", "5", "-rw_timeout", "30000000", "-ss", "754.500", "-i", "https://a",
 		"-t", "12.000", "-map", "0:v:0", "-map", "1:a:0",
 		"-c:v", "h264_videotoolbox", "-b:v", "8M", "-maxrate", "12M", "-bufsize", "16M",
 		"-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", "-f", "mp4", "/out/03.mp4.part",

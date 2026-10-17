@@ -50,6 +50,8 @@ export function ProcessPanel({ session }: { session: SessionView }) {
         </div>
         {reason && <p className="text-sm text-muted-foreground">{reason}</p>}
         {process.error && <p className="text-sm text-destructive">{process.error.message}</p>}
+        {retry.error && <p className="text-sm text-destructive">{retry.error.message}</p>}
+        {openFolder.error && <p className="text-sm text-destructive">{openFolder.error.message}</p>}
 
         {job && (
           <ul className="grid gap-3">
@@ -79,7 +81,7 @@ export function ProcessPanel({ session }: { session: SessionView }) {
                 <span className="font-mono">{job.concat.file}</span>
                 {job.concat.status === "queued" && !running && <span className="text-xs text-muted-foreground">waiting for failed clips</span>}
                 {job.concat.status === "failed" && (
-                  <Button size="sm" variant="outline" className="ml-auto" onClick={() => retry.mutate("concat")}>Retry</Button>
+                  <Button size="sm" variant="outline" className="ml-auto" disabled={retry.isPending} onClick={() => retry.mutate("concat")}>Retry</Button>
                 )}
                 {job.concat.status === "done" && (
                   <a className="ml-auto underline" href={api.fileUrl(id, job.concat.file)} download>Download</a>

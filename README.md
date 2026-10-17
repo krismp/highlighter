@@ -15,7 +15,7 @@ brew install go node pnpm yt-dlp ffmpeg
 make build && ./bin/highlighter   # opens http://127.0.0.1:7777
 ```
 
-Clips are written to `~/Movies/Highlights/<video title>/`, which can be changed in Settings.
+Clips are written to `~/Movies/Highlights/<video title>/`, which can be changed in Settings. A re-run after edits can leave older clip files in the folder. Launch the app from a terminal so Homebrew's PATH (yt-dlp, ffmpeg) is available.
 
 ## Develop
 

@@ -45,7 +45,8 @@ func CutArgs(s CutSpec) []string {
 }
 
 func inputArgs(st ytdlp.Stream, start float64) []string {
-	args := []string{"-reconnect", "1", "-reconnect_delay_max", "5"}
+	args := []string{"-reconnect", "1", "-reconnect_delay_max", "5",
+		"-rw_timeout", "30000000"} // 30s I/O stall limit, in microseconds
 	if h := headerBlob(st.Headers); h != "" {
 		args = append(args, "-headers", h)
 	}

@@ -140,7 +140,8 @@ func TestRetriesTransientFailuresAndReResolves(t *testing.T) {
 
 func TestGivesUpAfterTwoRetriesThenManualRetry(t *testing.T) {
 	c := &fakeCutter{failures: map[string]int{"b.mp4": 3}}
-	m := newManager(c, &fakeResolver{})
+	r := &fakeResolver{}
+	m := newManager(c, r)
 	m.Start(request(2, false))
 	v := waitFor(t, m, idle)
 	if s := v.Clips[1]; s.Status != Failed || s.Error != "boom" || s.Attempt != 3 {
@@ -149,10 +150,14 @@ func TestGivesUpAfterTwoRetriesThenManualRetry(t *testing.T) {
 	if v.Clips[0].Status != Done {
 		t.Errorf("other clip must keep going: %+v", v.Clips[0])
 	}
+	before := r.calls.Load()
 	if _, err := m.Retry("abc", "b"); err != nil {
 		t.Fatal(err)
 	}
 	v = waitFor(t, m, func(v View) bool { return v.Clips[1].Status == Done })
+	if got := r.calls.Load(); got != before+1 {
+		t.Errorf("resolver calls after manual retry = %d; want %d (re-resolve on first attempt)", got, before+1)
+	}
 	if v.Running {
 		t.Error("job should be idle after retry")
 	}
