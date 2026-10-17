@@ -48,6 +48,7 @@ type env struct {
 	jobs     *job.Manager
 	out      string
 	cfg      string
+	revealed *[]string // paths passed to RevealPath
 }
 
 func newEnv(t *testing.T) *env {
@@ -62,11 +63,13 @@ func newEnv(t *testing.T) *env {
 	jobs := job.NewManager(res, fileCutter{})
 	jobs.Backoff = []time.Duration{0, 0}
 	n := 0
+	revealed := &[]string{}
 	h := New(Deps{
 		Store: st, Jobs: jobs, Resolver: res, Encoder: ffmpeg.X264,
 		Health:      func(context.Context) tools.Status { return tools.Status{Encoder: "libx264"} },
 		UpdateYtDlp: func(context.Context) (string, error) { return "updated", nil },
 		OpenPath:    func(string) error { return nil },
+		RevealPath:  func(p string) error { *revealed = append(*revealed, p); return nil },
 		NewID:       func() string { n++; return fmt.Sprintf("c%d", n) },
 		UI: fstest.MapFS{
 			"index.html":    {Data: []byte("<html>app</html>")},
@@ -75,7 +78,7 @@ func newEnv(t *testing.T) *env {
 	})
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
-	return &env{srv: srv, resolver: res, jobs: jobs, out: out, cfg: filepath.Join(dir, "config")}
+	return &env{srv: srv, resolver: res, jobs: jobs, out: out, cfg: filepath.Join(dir, "config"), revealed: revealed}
 }
 
 func (e *env) do(t *testing.T, method, path string, body any) (int, []byte) {
@@ -408,5 +411,41 @@ func TestReelOnlyWithCustomName(t *testing.T) {
 	}
 	if code, _ := e.do(t, "GET", "/api/sessions/"+vid+"/files/"+v.Clips[0].File, nil); code == 200 {
 		t.Error("reel-only mode must not leave clip files in the output folder")
+	}
+}
+
+func TestRevealFileInFinder(t *testing.T) {
+	e := newEnv(t)
+	e.open(t)
+	v := e.approveAll(t, e.addClips(t, "0:01 tip off").Session)
+	if code, data := e.do(t, "POST", "/api/sessions/"+vid+"/process", map[string]string{"mode": "clips"}); code != 202 {
+		t.Fatalf("process: %d %s", code, data)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if jv, _ := e.jobs.View(vid); !jv.Running && jv.Clips[0].Status == job.Done {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("job did not finish")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	base := "/api/sessions/" + vid + "/files/"
+	if code, data := e.do(t, "POST", base+v.Clips[0].File+"/reveal", nil); code != 204 {
+		t.Fatalf("reveal: %d %s", code, data)
+	}
+	want := filepath.Join(e.out, "Me at the zoo", v.Clips[0].File)
+	if len(*e.revealed) != 1 || (*e.revealed)[0] != want {
+		t.Errorf("revealed %v; want [%s]", *e.revealed, want)
+	}
+	if code, _ := e.do(t, "POST", base+"missing.mp4/reveal", nil); code != 404 {
+		t.Errorf("missing file: %d; want 404", code)
+	}
+	if code, _ := e.do(t, "POST", base+"notes.txt/reveal", nil); code != 400 {
+		t.Errorf("bad name: %d; want 400", code)
+	}
+	if len(*e.revealed) != 1 {
+		t.Errorf("rejected requests must not reveal anything: %v", *e.revealed)
 	}
 }

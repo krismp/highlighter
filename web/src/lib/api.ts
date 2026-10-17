@@ -60,6 +60,7 @@ export const api = {
     request<JobView>("POST", `/sessions/${id}/process`, { mode, reelName }),
   retry: (id: string, clipId: string) => request<JobView>("POST", `/sessions/${id}/retry/${clipId}`),
   openFolder: (id: string) => request<void>("POST", `/sessions/${id}/open-folder`),
+  reveal: (id: string, file: string) => request<void>("POST", `/sessions/${id}/files/${encodeURIComponent(file)}/reveal`),
   fileUrl: (id: string, file: string) => `/api/sessions/${id}/files/${encodeURIComponent(file)}`,
   eventsUrl: (id: string) => `/api/sessions/${id}/events`,
 };

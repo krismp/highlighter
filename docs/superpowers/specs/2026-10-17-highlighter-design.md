@@ -120,7 +120,7 @@ Single user, running locally on macOS (Apple Silicon).
   - "Approve all remaining".
   - Process panel: output mode (every clip / full reel / both), reel file name, Process button
     (with the reason when it is disabled), and per-clip live status (queued → processing % →
-    done/failed) via SSE. Done clips get an inline `<video>` and a download link, failed clips get
+    done/failed) via SSE. Done clips get an inline `<video>`, a "Saved" marker and "Show in Finder" (`open -R`), failed clips get
     the error and Retry. "Open folder".
 - Controls are disabled while a save is in flight so that rapid clicks can't lose updates.
 
@@ -140,6 +140,7 @@ Single user, running locally on macOS (Apple Silicon).
 | GET | `/api/sessions/{id}/events` | SSE: full job view on every change |
 | POST | `/api/sessions/{id}/open-folder` | `open <outputDir>` |
 | GET | `/api/sessions/{id}/files/{name}` | serve a finished `.mp4` |
+| POST | `/api/sessions/{id}/files/{name}/reveal` | select that file in Finder; 404 if it isn't there |
 
 Every other path serves the embedded SPA, with an `index.html` fallback.
 

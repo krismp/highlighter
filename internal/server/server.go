@@ -34,6 +34,7 @@ type Deps struct {
 	Health      func(context.Context) tools.Status
 	UpdateYtDlp func(context.Context) (string, error)
 	OpenPath    func(string) error
+	RevealPath  func(string) error // show a file selected in Finder
 	NewID       func() string
 	UI          fs.FS
 	Port        int // listen port; 0 accepts any port (tests)
@@ -58,6 +59,7 @@ func New(d Deps) http.Handler {
 	mux.HandleFunc("GET /api/sessions/{id}/events", s.events)
 	mux.HandleFunc("POST /api/sessions/{id}/open-folder", s.openFolder)
 	mux.HandleFunc("GET /api/sessions/{id}/files/{name}", s.file)
+	mux.HandleFunc("POST /api/sessions/{id}/files/{name}/reveal", s.reveal)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) { writeError(w, 404, "not found") })
 	mux.Handle("/", spa(d.UI))
 	return hostGuard(d.Port, mux)
@@ -413,17 +415,38 @@ func (s *server) openFolder(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(204)
 }
 
-func (s *server) file(w http.ResponseWriter, r *http.Request) {
+// filePath resolves the {name} path value to a finished .mp4 in the session's
+// folder, rejecting anything that could point elsewhere.
+func (s *server) filePath(w http.ResponseWriter, r *http.Request) (string, bool) {
 	name := r.PathValue("name")
 	if name != filepath.Base(name) || strings.HasPrefix(name, ".") || !strings.HasSuffix(name, ".mp4") {
 		writeError(w, 400, "invalid file name")
-		return
+		return "", false
 	}
 	dir, ok := s.sessionDir(w, r)
+	return filepath.Join(dir, name), ok
+}
+
+func (s *server) file(w http.ResponseWriter, r *http.Request) {
+	if p, ok := s.filePath(w, r); ok {
+		http.ServeFile(w, r, p)
+	}
+}
+
+func (s *server) reveal(w http.ResponseWriter, r *http.Request) {
+	p, ok := s.filePath(w, r)
 	if !ok {
 		return
 	}
-	http.ServeFile(w, r, filepath.Join(dir, name))
+	if _, err := os.Stat(p); err != nil {
+		writeError(w, 404, "file not found: "+filepath.Base(p))
+		return
+	}
+	if err := s.RevealPath(p); err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
+	w.WriteHeader(204)
 }
 
 // spa serves built assets and falls back to index.html for client routes.

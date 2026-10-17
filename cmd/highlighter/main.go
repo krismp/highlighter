@@ -63,6 +63,7 @@ func main() {
 		},
 		UpdateYtDlp: tools.UpdateYtDlp,
 		OpenPath:    func(p string) error { return exec.Command("open", p).Run() },
+		RevealPath:  func(p string) error { return exec.Command("open", "-R", p).Run() },
 		NewID:       newID,
 		UI:          ui.FS(),
 		Port:        *port,

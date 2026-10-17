@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Download, FolderOpen, Pencil, RotateCw } from "lucide-react";
+import { CircleCheck, FolderOpen, Pencil, RotateCw, Search } from "lucide-react";
 import { useState } from "react";
 import { OpenVideoForm } from "@/components/OpenVideoForm";
 import { Button } from "@/components/ui/button";
@@ -104,6 +104,20 @@ function StatusChip({ status, progress }: { status: JobStatus; progress?: number
   );
 }
 
+/** A finished file is already on disk: say so, and offer to point at it in Finder. */
+function Saved({ onReveal, pending }: { onReveal: () => void; pending: boolean }) {
+  return (
+    <span className="inline-flex items-center gap-1">
+      <span className="inline-flex items-center gap-1 font-medium text-net">
+        <CircleCheck className="size-4" /> Saved
+      </span>
+      <Button size="sm" variant="ghost" disabled={pending} onClick={onReveal} title="Show this file in Finder">
+        <Search className="size-3.5" /> Show in Finder
+      </Button>
+    </span>
+  );
+}
+
 /** Replaces the clip list while a run is going and after it ends. */
 export function JobResults({ session, job, onEdit }: { session: SessionView; job: JobView; onEdit: () => void }) {
   const id = session.videoId;
@@ -111,6 +125,7 @@ export function JobResults({ session, job, onEdit }: { session: SessionView; job
   const setJob = (v: JobView) => qc.setQueryData(["job", id], v);
   const retry = useMutation({ mutationFn: (clipId: string) => api.retry(id, clipId), onSuccess: setJob });
   const openFolder = useMutation({ mutationFn: () => api.openFolder(id) });
+  const reveal = useMutation({ mutationFn: (file: string) => api.reveal(id, file) });
 
   const partsOnly = job.mode === "reel";
   const steps = job.clips.length + (job.concat.requested ? 1 : 0);
@@ -155,7 +170,7 @@ export function JobResults({ session, job, onEdit }: { session: SessionView; job
             </Button>
           )}
         </div>
-        {[retry.error, openFolder.error].map((e, i) => e && <p key={i} className="mt-2 text-sm text-destructive">{e.message}</p>)}
+        {[retry.error, openFolder.error, reveal.error].map((e, i) => e && <p key={i} className="mt-2 text-sm text-destructive">{e.message}</p>)}
       </div>
 
       {finished && (
@@ -176,9 +191,7 @@ export function JobResults({ session, job, onEdit }: { session: SessionView; job
               {job.concat.status === "done" && (
                 <>
                   <span className="score text-sm text-muted-foreground">{length(job.concat.duration)}<span className="ml-2">{bytes(job.concat.size)}</span></span>
-                  <a className="inline-flex items-center gap-1 font-medium text-primary underline-offset-4 hover:underline" href={api.fileUrl(id, job.concat.file)} download>
-                    <Download className="size-4" /> Download
-                  </a>
+                  <Saved pending={reveal.isPending} onReveal={() => reveal.mutate(job.concat.file)} />
                 </>
               )}
               {job.concat.status === "failed" && (
@@ -208,9 +221,7 @@ export function JobResults({ session, job, onEdit }: { session: SessionView; job
                 <Button size="sm" variant="outline" disabled={retry.isPending} onClick={() => retry.mutate(c.clipId)}><RotateCw className="size-3.5" /> Retry</Button>
               )}
               {c.status === "done" && !partsOnly && (
-                <a className="inline-flex items-center gap-1 font-medium text-primary underline-offset-4 hover:underline" href={api.fileUrl(id, c.file)} download>
-                  <Download className="size-4" /> Download
-                </a>
+                <Saved pending={reveal.isPending} onReveal={() => reveal.mutate(c.file)} />
               )}
             </div>
             {c.status === "processing" && (
