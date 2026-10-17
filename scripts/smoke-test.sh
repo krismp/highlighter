@@ -48,11 +48,30 @@ for tool in ytDlp ffmpeg deno; do
   [[ $path == "$tools_dir"* ]] || fail "$tool is not the bundled one: $path (want under $tools_dir)"
   echo "ok: $tool $(echo "$health" | field "d['$tool']['version']")"
 done
-echo "ok: encoder $(echo "$health" | field "d['encoder']")"
+encoder=$(echo "$health" | field "d['encoder']")
+echo "ok: encoder $encoder"
+
+# The clip pipeline without YouTube: HTTPS through the bundled CA file (static
+# ffmpeg builds cannot read the OS trust store), an encode with the chosen
+# encoder, and the JavaScript runtime yt-dlp uses for YouTube.
+tools=$(dirname "$exe")/tools
+ext=""; [[ -f $tools/ffmpeg.exe ]] && ext=.exe
+"$tools/ffmpeg$ext" -hide_banner -loglevel error -ca_file "$tools/cacert.pem" -f data \
+  -i https://raw.githubusercontent.com/krismp/highlighter/main/README.md -map 0 -c copy -f data - >/dev/null \
+  || fail "ffmpeg could not fetch over HTTPS with the bundled CA file"
+echo "ok: ffmpeg HTTPS with certificate verification"
+"$tools/ffmpeg$ext" -hide_banner -loglevel error -f lavfi -i testsrc=size=640x360:rate=30:duration=2 \
+  -f lavfi -i sine=duration=2 -c:v "$encoder" -pix_fmt yuv420p -c:a aac -shortest "$home/encode.mp4" \
+  && [[ -s $home/encode.mp4 ]] || fail "ffmpeg could not encode with $encoder"
+echo "ok: encoded H.264/AAC MP4 with $encoder"
+[[ $("$tools/deno$ext" eval "console.log(6 * 7)") == 42* ]] || fail "deno cannot run JavaScript"
+echo "ok: deno runs JavaScript"
 
 clip() {
   local v=jNQXAC9IVRw body='{"leadIn":0,"clips":[{"id":"c1","start":2,"duration":4,"label":"zoo","approved":true}]}'
-  curl -sf -XPOST -H "$json" "$api/sessions" -d "{\"url\":\"https://www.youtube.com/watch?v=$v\"}" >/dev/null || { echo "resolve failed"; return 1; }
+  local resp
+  resp=$(curl -s -XPOST -H "$json" "$api/sessions" -d "{\"url\":\"https://www.youtube.com/watch?v=$v\"}")
+  [[ $resp == *'"videoId"'* ]] || { echo "resolve failed: $resp"; return 1; }
   curl -sf -XPUT -H "$json" "$api/sessions/$v" -d "$body" >/dev/null && curl -sf -XPUT -H "$json" "$api/sessions/$v" -d "$body" >/dev/null
   curl -sf -XPOST -H "$json" "$api/sessions/$v/process" -d '{"mode":"both","reelName":""}' >/dev/null || { echo "process refused"; return 1; }
   local state=""
