@@ -60,8 +60,12 @@ Single user, running locally on macOS (Apple Silicon).
    the stream URLs are re-resolved on every retry. If it still fails it is marked failed,
    and a manual Retry button re-runs that clip only. Other clips keep going.
 6. Output is written to `<file>.part` and renamed when complete.
-7. The optional combined reel `highlights_full.mp4` (off by default) is built
-   with the ffmpeg concat demuxer (`-c copy`) once every clip is done. If clips
+7. **Output mode** (chosen per run): *every clip* (default), *full reel only*, or *both*.
+   The reel is built with the ffmpeg concat demuxer (`-c copy`) once every clip is done.
+   Its name defaults to the video title lowercased with spaces → `_` (e.g. `me_at_the_zoo.mp4`)
+   and can be renamed; typed names are normalised the same way. In reel-only mode the clips are
+   cut into `<outputDir>/.parts/` and that folder is removed once the reel is built (kept on failure
+   so a retry can reuse it). Finished clips and the reel report their length and file size. If clips
    failed, it waits for their manual retries. If the reel itself fails, it can be retried.
 
 ## Domain rules
@@ -105,14 +109,16 @@ Single user, running locally on macOS (Apple Silicon).
   "Update yt-dlp" button), URL input → opens/creates the session, "Recent videos" list,
   Settings card (output root, concurrency).
 - **Session** (`/s/$videoId`):
-  - Embedded YouTube player and a **Mark** button (adds a clip at the current time, rounded down to the second).
+  - Embedded YouTube player with a live time readout and an **Add clip at m:ss** button (adds a clip at the current time, rounded down to the second).
   - Paste textarea → "Add clips".
   - Lead-in input.
   - Clip list: index, start ±1 s, label, duration with −2 / +2 / +5 buttons and a
     number field, ▶ Preview (seeks to the effective start, auto-pauses at the effective end),
-    "Looks good" checkbox, Remove, and the clip's warnings and errors.
+    "Looks good" toggle, Remove, and the clip's warnings and errors. Previewing the same clip again
+    resumes from the playhead while it is inside the clip; changing the duration mid-preview moves the
+    end point without restarting. The clip being previewed shows a countdown of the seconds left.
   - "Approve all remaining".
-  - Process panel: "combine into highlights_full.mp4" checkbox, Process button
+  - Process panel: output mode (every clip / full reel / both), reel file name, Process button
     (with the reason when it is disabled), and per-clip live status (queued → processing % →
     done/failed) via SSE. Done clips get an inline `<video>` and a download link, failed clips get
     the error and Retry. "Open folder".
@@ -129,7 +135,7 @@ Single user, running locally on macOS (Apple Silicon).
 | POST | `/api/sessions` | `{url}` → load existing session or probe and create it |
 | GET/PUT | `/api/sessions/{id}` | view / save `{leadIn, clips}` |
 | POST | `/api/sessions/{id}/clips/parse` | `{text}` → append clips, returns `{session, errors}` |
-| POST | `/api/sessions/{id}/process` | `{concat}` → 202 job view, 409 if not processable or busy |
+| POST | `/api/sessions/{id}/process` | `{mode, reelName}` → 202 job view; 400 bad mode or reel name clashing with a clip; 409 if not processable or busy |
 | POST | `/api/sessions/{id}/retry/{clipId}` | retry a failed clip (`concat` = the reel) |
 | GET | `/api/sessions/{id}/events` | SSE: full job view on every change |
 | POST | `/api/sessions/{id}/open-folder` | `open <outputDir>` |

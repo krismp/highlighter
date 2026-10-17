@@ -203,7 +203,7 @@ func TestProcessRequiresApproval(t *testing.T) {
 	e := newEnv(t)
 	e.open(t)
 	e.addClips(t, "0:01")
-	if code, _ := e.do(t, "POST", "/api/sessions/"+vid+"/process", map[string]bool{"concat": false}); code != 409 {
+	if code, _ := e.do(t, "POST", "/api/sessions/"+vid+"/process", map[string]string{"mode": "clips"}); code != 409 {
 		t.Errorf("unapproved process: %d; want 409", code)
 	}
 }
@@ -212,7 +212,7 @@ func TestProcessWritesAndServesFiles(t *testing.T) {
 	e := newEnv(t)
 	e.open(t)
 	v := e.approveAll(t, e.addClips(t, "0:01 tip off\n0:08").Session)
-	code, data := e.do(t, "POST", "/api/sessions/"+vid+"/process", map[string]bool{"concat": true})
+	code, data := e.do(t, "POST", "/api/sessions/"+vid+"/process", map[string]string{"mode": "both"})
 	if code != 202 {
 		t.Fatalf("process: %d %s", code, data)
 	}
@@ -230,7 +230,7 @@ func TestProcessWritesAndServesFiles(t *testing.T) {
 	if code != 200 || string(body) != "clip" {
 		t.Errorf("file: %d %q", code, body)
 	}
-	if code, body = e.do(t, "GET", "/api/sessions/"+vid+"/files/highlights_full.mp4", nil); code != 200 || string(body) != "reel" {
+	if code, body = e.do(t, "GET", "/api/sessions/"+vid+"/files/me_at_the_zoo.mp4", nil); code != 200 || string(body) != "reel" {
 		t.Errorf("reel: %d %q", code, body)
 	}
 	dir := filepath.Join(e.out, "Me at the zoo")
@@ -369,5 +369,44 @@ func TestOpenVideoDoesNotOverwriteCorruptSession(t *testing.T) {
 	got, _ := os.ReadFile(path)
 	if !bytes.Equal(got, garbage) {
 		t.Errorf("session file was overwritten: %s", got)
+	}
+}
+
+func TestReelOnlyWithCustomName(t *testing.T) {
+	e := newEnv(t)
+	v := e.open(t)
+	if v.ReelName != "me_at_the_zoo" {
+		t.Errorf("default reel name = %q; want me_at_the_zoo", v.ReelName)
+	}
+	v = e.approveAll(t, e.addClips(t, "0:01 tip off\n0:08").Session)
+	if code, _ := e.do(t, "POST", "/api/sessions/"+vid+"/process", map[string]string{"mode": "everything"}); code != 400 {
+		t.Errorf("unknown mode: %d; want 400", code)
+	}
+	clash := strings.TrimSuffix(v.Clips[0].File, ".mp4")
+	if code, _ := e.do(t, "POST", "/api/sessions/"+vid+"/process", map[string]string{"mode": "both", "reelName": clash}); code != 400 {
+		t.Errorf("reel name equal to a clip file: %d; want 400", code)
+	}
+	code, data := e.do(t, "POST", "/api/sessions/"+vid+"/process", map[string]string{"mode": "reel", "reelName": "Final Cut!"})
+	if code != 202 {
+		t.Fatalf("process: %d %s", code, data)
+	}
+	if jv := decode[job.View](t, data); jv.Concat.File != "final_cut.mp4" || jv.Mode != job.ModeReel {
+		t.Errorf("job view %+v", jv)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if jv, _ := e.jobs.View(vid); jv.Concat.Status == job.Done {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("job did not finish")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if code, body := e.do(t, "GET", "/api/sessions/"+vid+"/files/final_cut.mp4", nil); code != 200 || string(body) != "reel" {
+		t.Errorf("reel: %d %q", code, body)
+	}
+	if code, _ := e.do(t, "GET", "/api/sessions/"+vid+"/files/"+v.Clips[0].File, nil); code == 200 {
+		t.Error("reel-only mode must not leave clip files in the output folder")
 	}
 }

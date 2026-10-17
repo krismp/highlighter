@@ -9,6 +9,7 @@ package job
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"slices"
 	"sync"
@@ -27,8 +28,20 @@ var (
 
 const (
 	ConcatID   = "concat"
-	ConcatFile = "highlights_full.mp4"
+	ConcatFile = "highlights_full.mp4" // reel file name when Request.ReelFile is empty
+	PartsDir   = ".parts"              // reel-only clips are cut here, then removed
 )
+
+// Mode says which files a job leaves in the output folder.
+type Mode string
+
+const (
+	ModeClips Mode = "clips" // one file per clip (also the zero value's behaviour)
+	ModeReel  Mode = "reel"  // only the combined reel
+	ModeBoth  Mode = "both"  // every clip and the combined reel
+)
+
+func (m Mode) Valid() bool { return m == ModeClips || m == ModeReel || m == ModeBoth }
 
 type Resolver interface {
 	Resolve(ctx context.Context, url string) (ytdlp.Info, error)
@@ -55,18 +68,23 @@ type ClipState struct {
 	Progress float64 `json:"progress"`
 	Attempt  int     `json:"attempt"`
 	Error    string  `json:"error"`
+	Duration float64 `json:"duration"` // seconds of video in the file
+	Size     int64   `json:"size"`     // bytes, set once done
 }
 
 type ConcatState struct {
-	Requested bool   `json:"requested"`
-	Status    Status `json:"status"`
-	File      string `json:"file"`
-	Error     string `json:"error"`
+	Requested bool    `json:"requested"`
+	Status    Status  `json:"status"`
+	File      string  `json:"file"`
+	Error     string  `json:"error"`
+	Duration  float64 `json:"duration"`
+	Size      int64   `json:"size"`
 }
 
 type View struct {
 	SessionID string      `json:"sessionId"`
 	OutputDir string      `json:"outputDir"`
+	Mode      Mode        `json:"mode"`
 	Clips     []ClipState `json:"clips"`
 	Concat    ConcatState `json:"concat"`
 	Running   bool        `json:"running"`
@@ -83,7 +101,8 @@ type Request struct {
 	URL         string
 	OutputDir   string
 	Tasks       []Task
-	Concat      bool
+	Mode        Mode
+	ReelFile    string // combined reel file name; ConcatFile when empty
 	Encoder     ffmpeg.Encoder
 	Concurrency int
 }
@@ -129,6 +148,7 @@ func (j *job) viewLocked() View {
 	return View{
 		SessionID: j.req.SessionID,
 		OutputDir: j.req.OutputDir,
+		Mode:      j.req.Mode,
 		Clips:     slices.Clone(j.clips),
 		Concat:    j.concat,
 		Running:   j.active > 0 || j.concat.Status == Processing,
@@ -137,6 +157,17 @@ func (j *job) viewLocked() View {
 
 func (m *Manager) Start(req Request) (View, error) {
 	req.Concurrency = max(req.Concurrency, 1)
+	if req.Mode == "" {
+		req.Mode = ModeClips
+	}
+	if req.ReelFile == "" {
+		req.ReelFile = ConcatFile
+	}
+	if req.Mode == ModeReel {
+		if err := os.MkdirAll(filepath.Join(req.OutputDir, PartsDir), 0o755); err != nil {
+			return View{}, err
+		}
+	}
 	m.mu.Lock()
 	if old, ok := m.jobs[req.SessionID]; ok {
 		old.mu.Lock()
@@ -148,11 +179,13 @@ func (m *Manager) Start(req Request) (View, error) {
 		}
 	}
 	j := &job{req: req, sem: make(chan struct{}, req.Concurrency), clips: make([]ClipState, len(req.Tasks))}
+	var total float64
 	for i, t := range req.Tasks {
-		j.clips[i] = ClipState{ClipID: t.ClipID, File: t.File, Status: Queued}
+		j.clips[i] = ClipState{ClipID: t.ClipID, File: t.File, Status: Queued, Duration: t.Range.Duration}
+		total += t.Range.Duration
 	}
-	if req.Concat {
-		j.concat = ConcatState{Requested: true, Status: Queued, File: ConcatFile}
+	if req.Mode != ModeClips {
+		j.concat = ConcatState{Requested: true, Status: Queued, File: req.ReelFile, Duration: total}
 	}
 	j.active = len(req.Tasks)
 	m.jobs[req.SessionID] = j
@@ -197,7 +230,7 @@ func (m *Manager) Retry(sessionID, clipID string) (View, error) {
 			}
 			idx = i
 			if c.Status == Failed {
-				j.clips[i] = ClipState{ClipID: c.ClipID, File: c.File, Status: Queued}
+				j.clips[i] = ClipState{ClipID: c.ClipID, File: c.File, Status: Queued, Duration: c.Duration}
 				j.active++
 				retryable = true
 			}
@@ -303,12 +336,13 @@ func (m *Manager) runClip(j *job, i int, refreshFirst bool) {
 		}
 	}
 	startConcat := false
+	size := fileSize(j.clipPath(i))
 	m.update(j, func() {
 		c := &j.clips[i]
 		if err != nil {
 			c.Status, c.Error = Failed, err.Error()
 		} else {
-			c.Status, c.Progress = Done, 1
+			c.Status, c.Progress, c.Size = Done, 1, size
 		}
 		j.active--
 		if j.concat.Requested && j.concat.Status == Queued && allDone(j.clips) {
@@ -341,7 +375,7 @@ func (m *Manager) cutOnce(j *job, i int, refresh bool) error {
 		Video: info.Video, Audio: info.Audio,
 		Start: t.Range.Start, Duration: t.Range.Duration,
 		Encoder: j.req.Encoder,
-		Output:  filepath.Join(j.req.OutputDir, t.File),
+		Output:  j.clipPath(i),
 	}
 	return m.cutter.Cut(ctx, spec, func(p float64) {
 		m.update(j, func() { j.clips[i].Progress = p })
@@ -365,15 +399,39 @@ func (m *Manager) streams(ctx context.Context, j *job, refresh bool) (ytdlp.Info
 
 func (m *Manager) runConcat(j *job) {
 	inputs := make([]string, len(j.req.Tasks))
-	for i, t := range j.req.Tasks {
-		inputs[i] = filepath.Join(j.req.OutputDir, t.File)
+	for i := range j.req.Tasks {
+		inputs[i] = j.clipPath(i)
 	}
-	err := m.cutter.Concat(context.Background(), inputs, filepath.Join(j.req.OutputDir, ConcatFile))
+	output := filepath.Join(j.req.OutputDir, j.req.ReelFile)
+	err := m.cutter.Concat(context.Background(), inputs, output)
+	if err == nil && j.req.Mode == ModeReel {
+		// The parts only existed to build the reel. Kept on failure so a retry can reuse them.
+		os.RemoveAll(filepath.Join(j.req.OutputDir, PartsDir))
+	}
+	size := fileSize(output)
 	m.update(j, func() {
 		if err != nil {
 			j.concat.Status, j.concat.Error = Failed, err.Error()
 		} else {
-			j.concat.Status = Done
+			j.concat.Status, j.concat.Size = Done, size
 		}
 	})
+}
+
+// clipPath is where clip i is written: the output folder, or its parts
+// folder when only the reel is kept.
+func (j *job) clipPath(i int) string {
+	dir := j.req.OutputDir
+	if j.req.Mode == ModeReel {
+		dir = filepath.Join(dir, PartsDir)
+	}
+	return filepath.Join(dir, j.req.Tasks[i].File)
+}
+
+func fileSize(path string) int64 {
+	fi, err := os.Stat(path)
+	if err != nil {
+		return 0
+	}
+	return fi.Size()
 }

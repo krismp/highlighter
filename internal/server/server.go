@@ -2,6 +2,7 @@
 package server
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -293,9 +294,14 @@ func (s *server) process(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Concat bool `json:"concat"`
+		Mode     job.Mode `json:"mode"`
+		ReelName string   `json:"reelName"`
 	}
 	if !readJSON(w, r, &body) {
+		return
+	}
+	if !body.Mode.Valid() {
+		writeError(w, 400, `mode must be "clips", "reel" or "both"`)
 		return
 	}
 	st, ok := s.settings(w)
@@ -307,12 +313,17 @@ func (s *server) process(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 409, "approve every clip and fix errors before processing")
 		return
 	}
+	reelFile := clip.ReelName(cmp.Or(strings.TrimSpace(body.ReelName), sess.Title)) + ".mp4"
+	if body.Mode != job.ModeClips && slices.ContainsFunc(v.Clips, func(c ClipView) bool { return c.File == reelFile }) {
+		writeError(w, 400, "the reel name "+reelFile+" is already used by a clip; choose another")
+		return
+	}
 	if err := os.MkdirAll(v.OutputDir, 0o755); err != nil {
 		writeError(w, 500, err.Error())
 		return
 	}
 	req := job.Request{SessionID: sess.VideoID, URL: sess.URL, OutputDir: v.OutputDir,
-		Concat: body.Concat, Encoder: s.Encoder, Concurrency: st.Concurrency}
+		Mode: body.Mode, ReelFile: reelFile, Encoder: s.Encoder, Concurrency: st.Concurrency}
 	for _, c := range v.Clips {
 		req.Tasks = append(req.Tasks, job.Task{ClipID: c.ID, Range: clip.Range{Start: c.EffStart, Duration: c.EffDuration}, File: c.File})
 	}

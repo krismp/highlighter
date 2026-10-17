@@ -56,3 +56,31 @@ func SafeDirName(title string) string {
 	}
 	return mapped
 }
+
+// ReelName turns a title or a typed name into the combined reel's file name
+// (without extension): lowercase, spaces and punctuation become "_", capped at
+// 60 runes, "highlights" when nothing usable is left.
+func ReelName(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	s = strings.TrimSuffix(s, ".mp4")
+	var b strings.Builder
+	sep := false
+	for _, r := range s {
+		switch {
+		case unicode.IsLetter(r) || unicode.IsDigit(r) || r == '-':
+			b.WriteRune(r)
+			sep = false
+		case b.Len() > 0 && !sep:
+			b.WriteByte('_')
+			sep = true
+		}
+	}
+	out := []rune(b.String())
+	if len(out) > 60 {
+		out = out[:60]
+	}
+	if name := strings.Trim(string(out), "_-"); name != "" {
+		return name
+	}
+	return "highlights"
+}

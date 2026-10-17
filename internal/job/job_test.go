@@ -3,6 +3,7 @@ package job
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"slices"
 	"sync"
@@ -72,9 +73,9 @@ func newManager(c *fakeCutter, r *fakeResolver) *Manager {
 	return m
 }
 
-func request(n int, concat bool) Request {
+func request(n int, mode Mode) Request {
 	req := Request{SessionID: "abc", URL: "https://www.youtube.com/watch?v=abc", OutputDir: "/out",
-		Concat: concat, Encoder: ffmpeg.X264, Concurrency: 3}
+		Mode: mode, Encoder: ffmpeg.X264, Concurrency: 3}
 	for i := range n {
 		req.Tasks = append(req.Tasks, Task{
 			ClipID: string(rune('a' + i)),
@@ -104,7 +105,7 @@ func idle(v View) bool { return !v.Running }
 func TestRunsAllClips(t *testing.T) {
 	c := &fakeCutter{}
 	m := newManager(c, &fakeResolver{})
-	if _, err := m.Start(request(2, false)); err != nil {
+	if _, err := m.Start(request(2, ModeClips)); err != nil {
 		t.Fatal(err)
 	}
 	v := waitFor(t, m, idle)
@@ -128,7 +129,7 @@ func TestRetriesTransientFailuresAndReResolves(t *testing.T) {
 	c := &fakeCutter{failures: map[string]int{"a.mp4": 2}}
 	r := &fakeResolver{}
 	m := newManager(c, r)
-	m.Start(request(1, false))
+	m.Start(request(1, ModeClips))
 	v := waitFor(t, m, idle)
 	if s := v.Clips[0]; s.Status != Done || s.Attempt != 3 {
 		t.Errorf("state %+v; want done on attempt 3", s)
@@ -142,7 +143,7 @@ func TestGivesUpAfterTwoRetriesThenManualRetry(t *testing.T) {
 	c := &fakeCutter{failures: map[string]int{"b.mp4": 3}}
 	r := &fakeResolver{}
 	m := newManager(c, r)
-	m.Start(request(2, false))
+	m.Start(request(2, ModeClips))
 	v := waitFor(t, m, idle)
 	if s := v.Clips[1]; s.Status != Failed || s.Error != "boom" || s.Attempt != 3 {
 		t.Fatalf("state %+v; want failed after 3 attempts", s)
@@ -168,7 +169,7 @@ func TestRetryErrors(t *testing.T) {
 	if _, err := m.Retry("abc", "a"); !errors.Is(err, ErrNotFound) {
 		t.Errorf("no job: err = %v", err)
 	}
-	m.Start(request(1, false))
+	m.Start(request(1, ModeClips))
 	waitFor(t, m, idle)
 	if _, err := m.Retry("abc", "a"); !errors.Is(err, ErrNotRetryable) {
 		t.Errorf("done clip: err = %v", err)
@@ -180,7 +181,7 @@ func TestRetryErrors(t *testing.T) {
 
 func TestResolveFailureFailsClip(t *testing.T) {
 	m := newManager(&fakeCutter{}, &fakeResolver{err: errors.New("yt-dlp: ERROR: Private video")})
-	m.Start(request(1, false))
+	m.Start(request(1, ModeClips))
 	v := waitFor(t, m, idle)
 	if s := v.Clips[0]; s.Status != Failed || s.Error != "yt-dlp: ERROR: Private video" {
 		t.Errorf("state %+v", s)
@@ -190,7 +191,7 @@ func TestResolveFailureFailsClip(t *testing.T) {
 func TestRespectsConcurrency(t *testing.T) {
 	c := &fakeCutter{delay: 20 * time.Millisecond}
 	m := newManager(c, &fakeResolver{})
-	req := request(6, false)
+	req := request(6, ModeClips)
 	req.Concurrency = 2
 	m.Start(req)
 	waitFor(t, m, idle)
@@ -202,7 +203,7 @@ func TestRespectsConcurrency(t *testing.T) {
 func TestConcatAfterAllDoneInOrder(t *testing.T) {
 	c := &fakeCutter{}
 	m := newManager(c, &fakeResolver{})
-	m.Start(request(3, true))
+	m.Start(request(3, ModeBoth))
 	v := waitFor(t, m, func(v View) bool { return v.Concat.Status == Done })
 	want := []string{"/out/highlights_full.mp4", "/out/a.mp4", "/out/b.mp4", "/out/c.mp4"}
 	if len(c.concats) != 1 || !slices.Equal(c.concats[0], want) {
@@ -216,7 +217,7 @@ func TestConcatAfterAllDoneInOrder(t *testing.T) {
 func TestConcatWaitsForManualRetry(t *testing.T) {
 	c := &fakeCutter{failures: map[string]int{"b.mp4": 3}}
 	m := newManager(c, &fakeResolver{})
-	m.Start(request(2, true))
+	m.Start(request(2, ModeBoth))
 	v := waitFor(t, m, idle)
 	if v.Concat.Status != Queued || len(c.concats) != 0 {
 		t.Fatalf("concat must wait: %+v", v.Concat)
@@ -228,13 +229,13 @@ func TestConcatWaitsForManualRetry(t *testing.T) {
 func TestStartWhileRunningIsBusy(t *testing.T) {
 	c := &fakeCutter{gate: make(chan struct{})}
 	m := newManager(c, &fakeResolver{})
-	m.Start(request(1, false))
-	if _, err := m.Start(request(1, false)); !errors.Is(err, ErrBusy) {
+	m.Start(request(1, ModeClips))
+	if _, err := m.Start(request(1, ModeClips)); !errors.Is(err, ErrBusy) {
 		t.Errorf("err = %v; want ErrBusy", err)
 	}
 	close(c.gate)
 	waitFor(t, m, idle)
-	if _, err := m.Start(request(1, false)); err != nil {
+	if _, err := m.Start(request(1, ModeClips)); err != nil {
 		t.Errorf("restart after idle: %v", err)
 	}
 }
@@ -246,7 +247,7 @@ func TestSubscribeReceivesUpdates(t *testing.T) {
 	if current != nil {
 		t.Fatalf("no job yet, current = %+v", current)
 	}
-	m.Start(request(2, false))
+	m.Start(request(2, ModeClips))
 	timeout := time.After(2 * time.Second)
 	for {
 		select {
@@ -282,7 +283,7 @@ func TestRetryAndStartNeverBothSucceed(t *testing.T) {
 		c.fail.Store(true)
 		m := NewManager(&fakeResolver{}, c)
 		m.Backoff = nil
-		m.Start(request(1, false))
+		m.Start(request(1, ModeClips))
 		waitFor(t, m, idle)
 		c.fail.Store(false)
 
@@ -290,12 +291,82 @@ func TestRetryAndStartNeverBothSucceed(t *testing.T) {
 		var retryErr, startErr error
 		wg.Add(2)
 		go func() { defer wg.Done(); _, retryErr = m.Retry("abc", "a") }()
-		go func() { defer wg.Done(); _, startErr = m.Start(request(1, false)) }()
+		go func() { defer wg.Done(); _, startErr = m.Start(request(1, ModeClips)) }()
 		wg.Wait()
 		if retryErr == nil && startErr == nil {
 			t.Fatal("Retry and Start both succeeded: two jobs running for one session")
 		}
 		close(c.gate)
 		waitFor(t, m, idle)
+	}
+}
+
+// writingCutter really writes its outputs so file placement and cleanup can be checked.
+type writingCutter struct {
+	mu      sync.Mutex
+	outputs []string
+	concats [][]string
+}
+
+func (w *writingCutter) Cut(ctx context.Context, spec ffmpeg.CutSpec, onProgress func(float64)) error {
+	w.mu.Lock()
+	w.outputs = append(w.outputs, spec.Output)
+	w.mu.Unlock()
+	return os.WriteFile(spec.Output, []byte("clip-bytes"), 0o644)
+}
+
+func (w *writingCutter) Concat(ctx context.Context, inputs []string, output string) error {
+	w.mu.Lock()
+	w.concats = append(w.concats, append([]string{output}, inputs...))
+	w.mu.Unlock()
+	return os.WriteFile(output, []byte("reel-bytes!"), 0o644)
+}
+
+func TestReelOnlyCutsIntoPartsAndRemovesThem(t *testing.T) {
+	out := t.TempDir()
+	c := &writingCutter{}
+	m := newManager(&fakeCutter{}, &fakeResolver{})
+	m.cutter = c
+	req := request(3, ModeReel)
+	req.OutputDir, req.ReelFile = out, "my_reel.mp4"
+	if _, err := m.Start(req); err != nil {
+		t.Fatal(err)
+	}
+	v := waitFor(t, m, func(v View) bool { return v.Concat.Status == Done })
+	parts := filepath.Join(out, PartsDir)
+	for _, o := range c.outputs {
+		if filepath.Dir(o) != parts {
+			t.Errorf("reel-only clip written to %s; want inside %s", o, parts)
+		}
+	}
+	if got := c.concats[0]; got[0] != filepath.Join(out, "my_reel.mp4") || filepath.Dir(got[1]) != parts {
+		t.Errorf("concat = %v", got)
+	}
+	if _, err := os.Stat(parts); !os.IsNotExist(err) {
+		t.Errorf("parts dir should be removed after the reel is built, stat err = %v", err)
+	}
+	if v.Mode != ModeReel || v.Concat.File != "my_reel.mp4" || v.Concat.Duration != 30 || v.Concat.Size != int64(len("reel-bytes!")) {
+		t.Errorf("view %+v", v)
+	}
+}
+
+func TestDoneClipsCarryDurationAndSize(t *testing.T) {
+	out := t.TempDir()
+	m := newManager(&fakeCutter{}, &fakeResolver{})
+	m.cutter = &writingCutter{}
+	req := request(2, ModeBoth)
+	req.OutputDir = out
+	m.Start(req)
+	v := waitFor(t, m, func(v View) bool { return v.Concat.Status == Done })
+	for _, c := range v.Clips {
+		if c.Duration != 10 || c.Size != int64(len("clip-bytes")) {
+			t.Errorf("clip state %+v; want duration 10 and size of written file", c)
+		}
+		if _, err := os.Stat(filepath.Join(out, c.File)); err != nil {
+			t.Errorf("both-mode clip %s should stay in the output folder: %v", c.File, err)
+		}
+	}
+	if v.Concat.File != ConcatFile {
+		t.Errorf("empty ReelFile should default to %s, got %s", ConcatFile, v.Concat.File)
 	}
 }

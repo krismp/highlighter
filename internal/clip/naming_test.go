@@ -56,3 +56,21 @@ func TestSafeDirName(t *testing.T) {
 		t.Errorf("long title length = %d; want 80", utf8.RuneCountInString(long))
 	}
 }
+
+func TestReelName(t *testing.T) {
+	cases := map[string]string{
+		"Me at the zoo":               "me_at_the_zoo",
+		"Fun Game Night: Team A vs B": "fun_game_night_team_a_vs_b",
+		"  My Reel.MP4 ":              "my_reel",
+		"Böse   Dunk!!":               "böse_dunk",
+		"pre-season_game":             "pre-season_game",
+		"🏀🏀":                          "highlights",
+		"":                            "highlights",
+		strings.Repeat("ab ", 40):     strings.TrimSuffix(strings.Repeat("ab_", 20), "_"),
+	}
+	for in, want := range cases {
+		if got := ReelName(in); got != want {
+			t.Errorf("ReelName(%q) = %q; want %q", in, got, want)
+		}
+	}
+}
