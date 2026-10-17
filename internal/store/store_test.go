@@ -2,6 +2,7 @@ package store
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -70,7 +71,7 @@ func TestRecentSessionsNewestFirst(t *testing.T) {
 func TestSettingsDefaultsAndSave(t *testing.T) {
 	s := newStore(t)
 	got, err := s.LoadSettings()
-	want := Settings{OutputRoot: filepath.Join("/Users/me", "Movies", "Highlights"), Concurrency: 3}
+	want := Settings{OutputRoot: filepath.Join("/Users/me", "Movies", "Highlights"), Concurrency: 3, DefaultDuration: 10}
 	if err != nil || got != want {
 		t.Fatalf("defaults = %+v, %v; want %+v", got, err, want)
 	}
@@ -80,5 +81,17 @@ func TestSettingsDefaultsAndSave(t *testing.T) {
 	got, _ = s.LoadSettings()
 	if got.OutputRoot != "/tmp/x" || got.Concurrency != 5 {
 		t.Fatalf("after save = %+v", got)
+	}
+}
+
+func TestSettingsWithoutDefaultDurationLoadTen(t *testing.T) {
+	s := newStore(t)
+	// settings.json written before the default length existed
+	if err := os.WriteFile(filepath.Join(s.dir, "settings.json"), []byte(`{"outputRoot":"/tmp/x","concurrency":2}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.LoadSettings()
+	if err != nil || got.DefaultDuration != 10 || got.Concurrency != 2 {
+		t.Fatalf("got %+v, %v; want default length 10", got, err)
 	}
 }

@@ -98,7 +98,7 @@ export function ClipRow({ clip, issues, playerReady, previewing, playhead, range
           <span className={cn("text-sm", live ? "text-white/60" : "text-muted-foreground")}>s</span>
         </label>
         <div className="flex items-center gap-1" role="group" aria-label="Adjust length">
-          {[-2, 2, 5].map((d) => (
+          {[-2, -1, 1, 2, 5].map((d) => (
             <button
               key={d}
               type="button"

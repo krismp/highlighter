@@ -10,7 +10,7 @@ export type ClipInput = Omit<Clip, "id"> & { id?: string };
 export interface RecentSession { videoId: string; title: string; clipCount: number; updatedAt: string }
 export interface ToolStatus { found: boolean; path: string; version: string }
 export interface Health { ytDlp: ToolStatus; ffmpeg: ToolStatus; encoder: string }
-export interface Settings { outputRoot: string; concurrency: number }
+export interface Settings { outputRoot: string; concurrency: number; defaultDuration: number }
 export interface LineError { line: number; text: string; err: string }
 export type JobStatus = "queued" | "processing" | "done" | "failed";
 export interface ClipState { clipId: string; file: string; status: JobStatus; progress: number; attempt: number; error: string; duration: number; size: number }

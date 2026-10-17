@@ -449,3 +449,24 @@ func TestRevealFileInFinder(t *testing.T) {
 		t.Errorf("rejected requests must not reveal anything: %v", *e.revealed)
 	}
 }
+
+func TestDefaultDurationSetting(t *testing.T) {
+	e := newEnv(t)
+	for _, d := range []float64{0.5, 121} {
+		if code, _ := e.do(t, "PUT", "/api/settings", map[string]any{"outputRoot": "/x", "concurrency": 2, "defaultDuration": d}); code != 400 {
+			t.Errorf("defaultDuration %v: %d; want 400", d, code)
+		}
+	}
+	code, data := e.do(t, "PUT", "/api/settings", map[string]any{"outputRoot": e.out, "concurrency": 2})
+	if got := decode[store.Settings](t, data); code != 200 || got.DefaultDuration != 10 {
+		t.Errorf("missing defaultDuration should save as 10: %d %+v", code, got)
+	}
+	if code, _ := e.do(t, "PUT", "/api/settings", map[string]any{"outputRoot": e.out, "concurrency": 2, "defaultDuration": 7.5}); code != 200 {
+		t.Fatalf("save 7.5: %d", code)
+	}
+	e.open(t)
+	r := e.addClips(t, "0:01: 3PT")
+	if c := r.Session.Clips; len(c) != 1 || c[0].Duration != 7.5 {
+		t.Errorf("pasted clip should use the default length 7.5: %+v", c)
+	}
+}

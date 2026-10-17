@@ -35,12 +35,13 @@ type Session struct {
 }
 
 type Settings struct {
-	OutputRoot  string `json:"outputRoot"`
-	Concurrency int    `json:"concurrency"`
+	OutputRoot      string  `json:"outputRoot"`
+	Concurrency     int     `json:"concurrency"`
+	DefaultDuration float64 `json:"defaultDuration"` // length of newly added clips, seconds
 }
 
 func DefaultSettings(home string) Settings {
-	return Settings{OutputRoot: filepath.Join(home, "Movies", "Highlights"), Concurrency: 3}
+	return Settings{OutputRoot: filepath.Join(home, "Movies", "Highlights"), Concurrency: 3, DefaultDuration: clip.DefaultDuration}
 }
 
 type Store struct {
@@ -54,6 +55,7 @@ func New(dir string, defaults Settings) (*Store, error) {
 	if err := os.MkdirAll(filepath.Join(dir, "sessions"), 0o755); err != nil {
 		return nil, err
 	}
+	defaults.DefaultDuration = cmp.Or(defaults.DefaultDuration, clip.DefaultDuration)
 	return &Store{dir: dir, defaults: defaults, now: time.Now}, nil
 }
 
@@ -133,6 +135,7 @@ func (s *Store) LoadSettings() (Settings, error) {
 	}
 	st.OutputRoot = cmp.Or(st.OutputRoot, s.defaults.OutputRoot)
 	st.Concurrency = cmp.Or(st.Concurrency, s.defaults.Concurrency)
+	st.DefaultDuration = cmp.Or(st.DefaultDuration, s.defaults.DefaultDuration)
 	return st, nil
 }
 

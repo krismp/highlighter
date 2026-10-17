@@ -79,6 +79,8 @@ Single user, running locally on macOS (Apple Silicon).
   entries. Invalid lines are reported with their line number and stay in the textarea.
   CRLF is accepted.
 - **Clip:** start, duration (default 10 s, min 1 s, max 120 s), optional label, approved flag.
+  The default for new clips is a setting (`defaultDuration`, 1–120 s, 10 s out of the box), editable on
+  the session page and in Settings; changing it never alters existing clips.
   Clips are always kept sorted by start time and numbered 1..N in that order.
 - **Lead-in:** global, 0–30 s, default 0. It *extends* every clip backwards:
   effective range = `[max(0, start − leadIn), start + duration]`. The end of the play
@@ -112,7 +114,7 @@ Single user, running locally on macOS (Apple Silicon).
   - Embedded YouTube player with a live time readout and an **Add clip at m:ss** button (adds a clip at the current time, rounded down to the second).
   - Paste textarea → "Add clips".
   - Lead-in input.
-  - Clip list: index, start ±1 s, label, duration with −2 / +2 / +5 buttons and a
+  - Clip list: index, start ±1 s, label, duration with −2 / −1 / +1 / +2 / +5 buttons and a
     number field, ▶ Preview (seeks to the effective start, auto-pauses at the effective end),
     "Looks good" toggle, Remove, and the clip's warnings and errors. Previewing the same clip again
     resumes from the playhead while it is inside the clip; changing the duration mid-preview moves the
@@ -130,7 +132,7 @@ Single user, running locally on macOS (Apple Silicon).
 |---|---|---|
 | GET | `/api/health` | yt-dlp/ffmpeg found + version, active encoder |
 | POST | `/api/tools/update-ytdlp` | `brew upgrade yt-dlp`, returns output |
-| GET/PUT | `/api/settings` | `{outputRoot, concurrency}` |
+| GET/PUT | `/api/settings` | `{outputRoot, concurrency, defaultDuration}` |
 | GET | `/api/sessions` | recent sessions |
 | POST | `/api/sessions` | `{url}` → load existing session or probe and create it |
 | GET/PUT | `/api/sessions/{id}` | view / save `{leadIn, clips}` |

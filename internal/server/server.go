@@ -185,6 +185,11 @@ func (s *server) putSettings(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "concurrency must be between 1 and 8")
 		return
 	}
+	st.DefaultDuration = cmp.Or(st.DefaultDuration, clip.DefaultDuration)
+	if st.DefaultDuration < clip.MinDuration || st.DefaultDuration > clip.MaxDuration {
+		writeError(w, 400, fmt.Sprintf("default clip length must be between %gs and %gs", clip.MinDuration, clip.MaxDuration))
+		return
+	}
 	if err := s.Store.SaveSettings(st); err != nil {
 		writeError(w, 500, err.Error())
 		return
@@ -281,10 +286,14 @@ func (s *server) parseClips(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &body) {
 		return
 	}
+	st, ok := s.settings(w)
+	if !ok {
+		return
+	}
 	entries, lineErrs := timecode.ParseList(body.Text)
 	incoming := slices.Clone(sess.Clips)
 	for _, e := range entries {
-		incoming = append(incoming, clip.Clip{ID: s.NewID(), Start: e.Start, Duration: clip.DefaultDuration, Label: e.Label})
+		incoming = append(incoming, clip.Clip{ID: s.NewID(), Start: e.Start, Duration: st.DefaultDuration, Label: e.Label})
 	}
 	sess.Clips = clip.Reconcile(sess.Clips, incoming, false, s.NewID)
 	s.saveAndRespond(w, sess, func(v SessionView) any { return parseResponse{Session: v, Errors: lineErrs} })

@@ -40,6 +40,16 @@ function Session({ videoId }: { videoId: string }) {
     },
     onSuccess: setSession,
   });
+  const settings = useQuery({ queryKey: ["settings"], queryFn: api.settings });
+  const defaultLength = settings.data?.defaultDuration ?? 10;
+  const [lengthInput, setLengthInput] = useState("");
+  useEffect(() => {
+    if (settings.data) setLengthInput(String(settings.data.defaultDuration));
+  }, [settings.data?.defaultDuration]);
+  const saveDefault = useMutation({
+    mutationFn: (defaultDuration: number) => api.saveSettings({ ...settings.data!, defaultDuration }),
+    onSuccess: (st) => qc.setQueryData(["settings"], st),
+  });
   const [leadIn, setLeadIn] = useState("0");
   useEffect(() => {
     if (session.data) setLeadIn(String(session.data.leadIn));
@@ -69,7 +79,12 @@ function Session({ videoId }: { videoId: string }) {
   };
   const addAtPlayhead = () => {
     const start = Math.floor(player.currentTime());
-    update((cur) => ({ clips: [...toInputs(cur.clips), { start, duration: 10, label: "", approved: false }] }));
+    update((cur) => ({ clips: [...toInputs(cur.clips), { start, duration: defaultLength, label: "", approved: false }] }));
+  };
+  const commitDefaultLength = () => {
+    const v = Math.round(Number(lengthInput) * 10) / 10;
+    if (settings.data && lengthInput.trim() !== "" && v >= 1 && v <= 120 && v !== defaultLength) saveDefault.mutate(v);
+    else setLengthInput(String(defaultLength));
   };
 
   return (
@@ -98,6 +113,12 @@ function Session({ videoId }: { videoId: string }) {
           <p className="mb-3 text-sm text-muted-foreground">One per line, with an optional label after the time.</p>
           <AddClips videoId={videoId} onAdded={setSession} />
           <div className="mt-4 flex flex-wrap items-center gap-2 border-t pt-4">
+            <Label htmlFor="defaultLength">New clips last</Label>
+            <Input id="defaultLength" className="w-20" type="number" min={1} max={120} step="0.5" value={lengthInput}
+              onChange={(e) => setLengthInput(e.target.value)} onBlur={commitDefaultLength} onKeyDown={(e) => e.key === "Enter" && commitDefaultLength()} />
+            <span className="text-sm text-muted-foreground">seconds. Used for pasted clips and "Add clip at". Existing clips keep their length.</span>
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
             <Label htmlFor="leadIn">Lead-in</Label>
             <Input id="leadIn" className="w-20" type="number" min={0} max={30} step="0.5" value={leadIn}
               onChange={(e) => setLeadIn(e.target.value)} onBlur={commitLeadIn} onKeyDown={(e) => e.key === "Enter" && commitLeadIn()} />
@@ -105,6 +126,7 @@ function Session({ videoId }: { videoId: string }) {
           </div>
         </div>}
         {save.error && <p className="text-sm text-destructive">{save.error.message}</p>}
+        {saveDefault.error && <p className="text-sm text-destructive">{saveDefault.error.message}</p>}
       </section>
 
       {showResults ? (
