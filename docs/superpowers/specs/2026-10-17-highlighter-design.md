@@ -69,7 +69,8 @@ Single user, running locally on macOS (Apple Silicon).
 - **Timestamp formats:** `83`, `1:23`, `01:02:03`, optional fraction (`1:23.5`).
   Minutes and seconds after the first field must be < 60.
 - **Paste list:** one entry per line, `<timestamp> [label]`. Separators like
-  `-`, `–`, `|`, `:` or `,` between the timestamp and label are stripped. A line made
+  `-`, `–`, `|`, `:` or `,` between the timestamp and label are stripped, including one glued to the
+  timestamp (`3:47: 3PT` → 3:47, label `3PT`). A line made
   up only of timestamps separated by commas, semicolons or spaces becomes several
   entries. Invalid lines are reported with their line number and stay in the textarea.
   CRLF is accepted.

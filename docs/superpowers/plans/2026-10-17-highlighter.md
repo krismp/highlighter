@@ -26,7 +26,7 @@
 
 ## Review Focus
 
-1. **Pasted timestamp lists that aren't neat one-per-line** (`1:23, 2:45; 3:10`, `12:34 - Andi`, CRLF line endings from Windows notes): all of them should parse into the expected entries. Pinned in Task 1 (`TestParseList`).
+1. **Pasted timestamp lists that aren't neat one-per-line** (`1:23, 2:45; 3:10`, `12:34 - Andi`, CRLF line endings from Windows notes, and the user's own format `3:47: 3PT` with a trailing colon): all of them should parse into the expected entries. Pinned in Task 1 (`TestParseList`, `TestParseListTrailingColonFormat`).
 2. **The last play of the match, where start + 10 s runs past the video end**: this should be trimmed with a warning, not blocked and not failed in ffmpeg. Pinned in Task 2 (`TestValidate`, `TestEffective`).
 3. **Stream URLs expiring or returning 403 between attempts**: every retry should re-resolve via yt-dlp. Pinned in Task 6 (`TestRetriesTransientFailuresAndReResolves`).
 4. **Match titles containing `/`, `:`, emoji or 200 characters**: these should produce a safe, bounded folder name. Pinned in Task 2 (`TestSafeDirName`).
@@ -153,6 +153,16 @@ func TestParseList(t *testing.T) {
 	}
 }
 
+// The user's real-world format: timestamp with a trailing colon, then the play type.
+func TestParseListTrailingColonFormat(t *testing.T) {
+	text := "3:47: 3PT\n7:35: DREB\n8:22: 2PT\n10:05: 2PT\n12:39: 3PT\n"
+	entries, errs := ParseList(text)
+	want := []Entry{{227, "3PT"}, {455, "DREB"}, {502, "2PT"}, {605, "2PT"}, {759, "3PT"}}
+	if len(errs) != 0 || !reflect.DeepEqual(entries, want) {
+		t.Errorf("entries = %+v, errs = %+v; want %+v", entries, errs, want)
+	}
+}
+
 func TestParseListEmptyReturnsEmptySlices(t *testing.T) {
 	entries, errs := ParseList("   \n")
 	if entries == nil || errs == nil || len(entries) != 0 || len(errs) != 0 {
@@ -250,7 +260,7 @@ func ParseList(text string) ([]Entry, []LineError) {
 		if idx := strings.IndexFunc(line, unicode.IsSpace); idx >= 0 {
 			stamp, rest = line[:idx], line[idx:]
 		}
-		start, err := Parse(stamp)
+		start, err := Parse(strings.TrimRight(stamp, labelTrim)) // "3:47: 3PT", "3:47- 3PT"
 		if err != nil {
 			errs = append(errs, LineError{Line: i + 1, Text: line, Err: err.Error()})
 			continue
