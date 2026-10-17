@@ -4,7 +4,7 @@ export interface Clip { id: string; start: number; duration: number; label: stri
 export interface ClipView extends Clip { index: number; startText: string; effStart: number; effDuration: number; file: string }
 export interface SessionView {
   videoId: string; url: string; title: string; duration: number; durationText: string; leadIn: number;
-  clips: ClipView[]; issues: Issue[]; canProcess: boolean; outputDir: string;
+  clips: ClipView[]; issues: Issue[]; canProcess: boolean; outputDir: string; reelName: string;
 }
 export type ClipInput = Omit<Clip, "id"> & { id?: string };
 export interface RecentSession { videoId: string; title: string; clipCount: number; updatedAt: string }
@@ -13,10 +13,12 @@ export interface Health { ytDlp: ToolStatus; ffmpeg: ToolStatus; encoder: string
 export interface Settings { outputRoot: string; concurrency: number }
 export interface LineError { line: number; text: string; err: string }
 export type JobStatus = "queued" | "processing" | "done" | "failed";
-export interface ClipState { clipId: string; file: string; status: JobStatus; progress: number; attempt: number; error: string }
+export interface ClipState { clipId: string; file: string; status: JobStatus; progress: number; attempt: number; error: string; duration: number; size: number }
+/** Which files a run leaves in the folder: each clip, only the combined reel, or both. */
+export type OutputMode = "clips" | "reel" | "both";
 export interface JobView {
-  sessionId: string; outputDir: string; clips: ClipState[]; running: boolean;
-  concat: { requested: boolean; status: JobStatus | ""; file: string; error: string };
+  sessionId: string; outputDir: string; mode: OutputMode; clips: ClipState[]; running: boolean;
+  concat: { requested: boolean; status: JobStatus | ""; file: string; error: string; duration: number; size: number };
 }
 
 export class ApiError extends Error {
@@ -54,7 +56,8 @@ export const api = {
     request<SessionView>("PUT", `/sessions/${id}`, body),
   parseClips: (id: string, text: string) =>
     request<{ session: SessionView; errors: LineError[] }>("POST", `/sessions/${id}/clips/parse`, { text }),
-  process: (id: string, concat: boolean) => request<JobView>("POST", `/sessions/${id}/process`, { concat }),
+  process: (id: string, mode: OutputMode, reelName: string) =>
+    request<JobView>("POST", `/sessions/${id}/process`, { mode, reelName }),
   retry: (id: string, clipId: string) => request<JobView>("POST", `/sessions/${id}/retry/${clipId}`),
   openFolder: (id: string) => request<void>("POST", `/sessions/${id}/open-folder`),
   fileUrl: (id: string, file: string) => `/api/sessions/${id}/files/${encodeURIComponent(file)}`,

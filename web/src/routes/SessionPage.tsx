@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "@tanstack/react-router";
+import { Plus } from "lucide-react";
 import { useEffect, useState } from "react";
 import { AddClips } from "@/components/AddClips";
 import { ClipRow } from "@/components/ClipRow";
@@ -9,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useYouTubePlayer } from "@/hooks/useYouTubePlayer";
 import { api, toInputs, type ClipInput, type SessionView } from "@/lib/api";
+import { clock } from "@/lib/format";
 
 export function SessionPage() {
   const { videoId } = useParams({ from: "/s/$videoId" });
@@ -32,6 +34,13 @@ export function SessionPage() {
     if (session.data) setLeadIn(String(session.data.leadIn));
   }, [session.data?.leadIn]);
 
+  // Adjusting the clip that is playing moves its end point; playback carries on.
+  const playing = session.data?.clips.find((c) => c.id === player.previewing);
+  const { extend } = player;
+  useEffect(() => {
+    if (playing) extend(playing.id, playing.effStart, playing.effDuration);
+  }, [playing?.id, playing?.effStart, playing?.effDuration, extend]);
+
   if (session.error) return <p className="text-destructive">{session.error.message}</p>;
   const s = session.data;
   if (!s) return <p className="text-muted-foreground">Loading…</p>;
@@ -40,48 +49,76 @@ export function SessionPage() {
     save.mutate((cur) => ({ leadIn: cur.leadIn, ...build(cur) }));
   const patch = (id: string, p: Partial<ClipInput>) =>
     update((cur) => ({ clips: toInputs(cur.clips).map((c) => (c.id === id ? { ...c, ...p } : c)) }));
-  const unapproved = s.clips.filter((c) => !c.approved).length;
+  const approved = s.clips.filter((c) => c.approved).length;
+  const unapproved = s.clips.length - approved;
   const commitLeadIn = () => {
     const v = Number(leadIn);
-    if (Number.isFinite(v) && v >= 0 && v <= 30 && v !== s.leadIn) update((cur) => ({ leadIn: v, clips: toInputs(cur.clips) }));
+    if (leadIn.trim() !== "" && Number.isFinite(v) && v >= 0 && v <= 30 && v !== s.leadIn) update((cur) => ({ leadIn: v, clips: toInputs(cur.clips) }));
     else setLeadIn(String(s.leadIn));
+  };
+  const addAtPlayhead = () => {
+    const start = Math.floor(player.currentTime());
+    update((cur) => ({ clips: [...toInputs(cur.clips), { start, duration: 10, label: "", approved: false }] }));
   };
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+    <div className="grid gap-8 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
       <section className="grid content-start gap-4 lg:sticky lg:top-4 lg:self-start">
         <div>
-          <h1 className="truncate text-lg font-semibold" title={s.title}>{s.title}</h1>
-          <p className="text-sm text-muted-foreground">{s.durationText} · saving to {s.outputDir}</p>
+          <h1 className="font-heading text-3xl leading-tight font-bold text-balance" title={s.title}>{s.title}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {s.durationText} long. Clips are saved to <span className="break-all text-foreground">{s.outputDir}</span>
+          </p>
         </div>
-        <div ref={player.containerRef} className="aspect-video w-full overflow-hidden rounded-md bg-black [&_iframe]:h-full [&_iframe]:w-full" />
-        <Button
-          disabled={!player.ready}
-          onClick={() => {
-            const start = Math.floor(player.currentTime());
-            update((cur) => ({ clips: [...toInputs(cur.clips), { start, duration: 10, label: "", approved: false }] }));
-          }}
-        >
-          ⚑ Mark play at current time
-        </Button>
-        <AddClips videoId={videoId} onAdded={setSession} />
-        <div className="flex items-center gap-2">
-          <Label htmlFor="leadIn">Lead-in (s)</Label>
-          <Input id="leadIn" className="w-20" type="number" min={0} max={30} step="0.5" value={leadIn}
-            onChange={(e) => setLeadIn(e.target.value)} onBlur={commitLeadIn} onKeyDown={(e) => e.key === "Enter" && commitLeadIn()} />
-          <span className="text-xs text-muted-foreground">starts every clip this much earlier; changing it clears approvals</span>
+
+        <div className="overflow-hidden rounded-lg bg-board shadow-lg">
+          <div ref={player.containerRef} className="aspect-video w-full bg-black [&_iframe]:h-full [&_iframe]:w-full" />
+          <div className="flex flex-wrap items-center gap-3 px-3 py-2.5 text-white">
+            <span className="score led w-20 text-3xl font-bold" aria-label="Current video time">{clock(player.playhead)}</span>
+            <p className="min-w-40 flex-1 text-sm text-white/70">Pause where a play starts, then add it as a clip.</p>
+            <Button disabled={!player.ready} onClick={addAtPlayhead}>
+              <Plus className="size-4" /> Add clip at {clock(player.playhead)}
+            </Button>
+          </div>
+        </div>
+
+        <div className="rounded-lg border bg-card p-4">
+          <h2 className="font-heading text-lg font-semibold">Paste start times</h2>
+          <p className="mb-3 text-sm text-muted-foreground">One per line, with an optional label after the time.</p>
+          <AddClips videoId={videoId} onAdded={setSession} />
+          <div className="mt-4 flex flex-wrap items-center gap-2 border-t pt-4">
+            <Label htmlFor="leadIn">Lead-in</Label>
+            <Input id="leadIn" className="w-20" type="number" min={0} max={30} step="0.5" value={leadIn}
+              onChange={(e) => setLeadIn(e.target.value)} onBlur={commitLeadIn} onKeyDown={(e) => e.key === "Enter" && commitLeadIn()} />
+            <span className="text-sm text-muted-foreground">seconds added before every clip. Changing it clears approvals.</span>
+          </div>
         </div>
         {save.error && <p className="text-sm text-destructive">{save.error.message}</p>}
       </section>
 
       <section className="grid content-start gap-3">
-        <div className="flex items-center justify-between">
-          <h2 className="font-semibold">Clips ({s.clips.length})</h2>
-          <Button size="sm" variant="outline" disabled={unapproved === 0} onClick={() => update((cur) => ({ clips: toInputs(cur.clips).map((c) => ({ ...c, approved: true })) }))}>
-            Approve all remaining ({unapproved})
+        <div className="flex flex-wrap items-end justify-between gap-2">
+          <div>
+            <h2 className="font-heading text-2xl font-bold">Clips</h2>
+            <p className="text-sm text-muted-foreground">
+              {s.clips.length === 0 ? "None yet" : `${approved} of ${s.clips.length} approved`}
+            </p>
+          </div>
+          <Button size="sm" variant="outline" disabled={unapproved === 0}
+            onClick={() => update((cur) => ({ clips: toInputs(cur.clips).map((c) => ({ ...c, approved: true })) }))}>
+            Approve the other {unapproved}
           </Button>
         </div>
-        {s.clips.length === 0 && <p className="text-sm text-muted-foreground">No clips yet. Mark plays while watching, or paste start times.</p>}
+        {s.clips.length > 0 && (
+          <div className="h-1.5 overflow-hidden rounded-full bg-muted" aria-hidden>
+            <div className="h-full bg-net transition-[width] duration-500" style={{ width: `${(approved / s.clips.length) * 100}%` }} />
+          </div>
+        )}
+        {s.clips.length === 0 && (
+          <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+            Add a clip from the player, or paste the start times of each play.
+          </p>
+        )}
         {s.clips.map((c) => (
           <ClipRow
             key={c.id}
@@ -89,6 +126,8 @@ export function SessionPage() {
             issues={s.issues.filter((i) => i.clipId === c.id)}
             playerReady={player.ready}
             previewing={player.previewing === c.id}
+            playhead={player.playhead}
+            range={player.previewing === c.id ? player.range : null}
             onPreview={() => player.preview(c.id, c.effStart, c.effDuration)}
             onStop={player.stopPreview}
             onPatch={(p) => patch(c.id, p)}

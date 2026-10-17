@@ -5,12 +5,17 @@ import { SessionPage } from "@/routes/SessionPage";
 const rootRoute = createRootRoute({
   component: () => (
     <div className="min-h-screen bg-background text-foreground">
-      <header className="border-b">
-        <div className="mx-auto max-w-6xl px-4 py-3">
-          <Link to="/" className="font-semibold tracking-tight">🏀 highlighter</Link>
+      <header className="bg-board text-white">
+        <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-3">
+          <Link to="/" className="flex items-center gap-2 rounded-sm focus-visible:ring-2 focus-visible:ring-court focus-visible:outline-none">
+            <span className="grid size-7 place-items-center rounded-full bg-court text-sm" aria-hidden>🏀</span>
+            <span className="font-heading text-xl font-bold">highlighter</span>
+          </Link>
+          <span className="hidden text-sm text-white/60 sm:inline">Cut every play out of a match</span>
         </div>
+        <div className="h-1 bg-court" aria-hidden />
       </header>
-      <main className="mx-auto max-w-6xl px-4 py-6">
+      <main className="mx-auto max-w-6xl px-4 py-8">
         <Outlet />
       </main>
     </div>
