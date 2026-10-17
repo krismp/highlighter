@@ -79,21 +79,42 @@ export function ClipRow({ clip, issues, playerReady, previewing, playhead, range
       </div>
 
       <div className="mt-2 flex flex-wrap items-center gap-2">
-        <div className={cn("flex items-center rounded-md border", live && "border-white/20")} role="group" aria-label="Clip length">
-          <Button size="sm" variant="ghost" className={cn("rounded-r-none", live && "text-white hover:bg-white/10 hover:text-white")}
-            onClick={() => onPatch({ duration: clampDuration(clip.duration - 2) })}>−2s</Button>
-          <Input
-            className={cn("h-8 w-16 rounded-none border-0 border-x text-center shadow-none", live && "border-white/20 bg-transparent text-white")}
-            type="number" step="0.5" min={MIN} max={MAX}
+        <label
+          className={cn(
+            "flex h-9 items-center gap-1 rounded-md border bg-background px-2 shadow-xs focus-within:ring-2 focus-within:ring-ring",
+            live && "border-white/25 bg-white/10",
+          )}
+        >
+          <span className={cn("text-xs", live ? "text-white/60" : "text-muted-foreground")}>Length</span>
+          <input
+            className={cn("score w-12 bg-transparent text-right text-lg font-semibold outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none", live && "text-white")}
+            type="number" step="0.5" min={MIN} max={MAX} inputMode="decimal"
             aria-label="Clip length in seconds"
             value={duration}
             onChange={(e) => setDuration(e.target.value)}
             onBlur={commitDuration}
             onKeyDown={(e) => e.key === "Enter" && commitDuration()}
           />
-          {[2, 5].map((d) => (
-            <Button key={d} size="sm" variant="ghost" className={cn("rounded-none last:rounded-r-md", live && "text-white hover:bg-white/10 hover:text-white")}
-              onClick={() => onPatch({ duration: clampDuration(clip.duration + d) })}>+{d}s</Button>
+          <span className={cn("text-sm", live ? "text-white/60" : "text-muted-foreground")}>s</span>
+        </label>
+        <div className="flex items-center gap-1" role="group" aria-label="Adjust length">
+          {[-2, 2, 5].map((d) => (
+            <button
+              key={d}
+              type="button"
+              aria-label={d > 0 ? `Make clip ${d} seconds longer` : `Make clip ${-d} seconds shorter`}
+              onClick={() => onPatch({ duration: clampDuration(clip.duration + d) })}
+              className={cn(
+                "score h-7 rounded-full px-3 text-sm font-semibold transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-95",
+                live
+                  ? "bg-white/10 text-white hover:bg-court"
+                  : d < 0
+                    ? "bg-secondary text-secondary-foreground hover:bg-muted-foreground/20"
+                    : "bg-accent text-accent-foreground hover:bg-court hover:text-white",
+              )}
+            >
+              {d > 0 ? `+${d}s` : `−${-d}s`}
+            </button>
           ))}
         </div>
 
