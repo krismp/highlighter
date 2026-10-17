@@ -8,6 +8,7 @@ export function AddClips({ videoId, onAdded }: { videoId: string; onAdded: (s: S
   const [text, setText] = useState("");
   const [errors, setErrors] = useState<LineError[]>([]);
   const add = useMutation({
+    scope: { id: `session-${videoId}` },
     mutationFn: () => api.parseClips(videoId, text),
     onSuccess: (r) => {
       onAdded(r.session);

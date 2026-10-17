@@ -16,8 +16,15 @@ export function SessionPage() {
   const session = useQuery({ queryKey: ["session", videoId], queryFn: () => api.session(videoId) });
   const player = useYouTubePlayer(videoId, session.data !== undefined);
   const setSession = (v: SessionView) => qc.setQueryData(["session", videoId], v);
+  // Writes run one at a time (scope) and each body is built from the latest cached
+  // session when it runs, so queued edits never overwrite one another.
   const save = useMutation({
-    mutationFn: (body: { leadIn: number; clips: ClipInput[] }) => api.saveSession(videoId, body),
+    scope: { id: `session-${videoId}` },
+    mutationFn: (build: (s: SessionView) => { leadIn: number; clips: ClipInput[] }) => {
+      const latest = qc.getQueryData<SessionView>(["session", videoId]);
+      if (!latest) throw new Error("session not loaded");
+      return api.saveSession(videoId, build(latest));
+    },
     onSuccess: setSession,
   });
   const [leadIn, setLeadIn] = useState("0");
@@ -29,14 +36,14 @@ export function SessionPage() {
   const s = session.data;
   if (!s) return <p className="text-muted-foreground">Loading…</p>;
 
-  const busy = save.isPending; // one save at a time so rapid clicks can't lose edits
-  const clips = toInputs(s.clips);
-  const update = (next: ClipInput[], nextLeadIn = s.leadIn) => save.mutate({ leadIn: nextLeadIn, clips: next });
-  const patch = (id: string, p: Partial<ClipInput>) => update(clips.map((c) => (c.id === id ? { ...c, ...p } : c)));
+  const update = (build: (cur: SessionView) => { leadIn?: number; clips: ClipInput[] }) =>
+    save.mutate((cur) => ({ leadIn: cur.leadIn, ...build(cur) }));
+  const patch = (id: string, p: Partial<ClipInput>) =>
+    update((cur) => ({ clips: toInputs(cur.clips).map((c) => (c.id === id ? { ...c, ...p } : c)) }));
   const unapproved = s.clips.filter((c) => !c.approved).length;
   const commitLeadIn = () => {
     const v = Number(leadIn);
-    if (Number.isFinite(v) && v >= 0 && v <= 30 && v !== s.leadIn) update(clips, v);
+    if (Number.isFinite(v) && v >= 0 && v <= 30 && v !== s.leadIn) update((cur) => ({ leadIn: v, clips: toInputs(cur.clips) }));
     else setLeadIn(String(s.leadIn));
   };
 
@@ -49,8 +56,11 @@ export function SessionPage() {
         </div>
         <div ref={player.containerRef} className="aspect-video w-full overflow-hidden rounded-md bg-black [&_iframe]:h-full [&_iframe]:w-full" />
         <Button
-          disabled={!player.ready || busy}
-          onClick={() => update([...clips, { start: Math.floor(player.currentTime()), duration: 10, label: "", approved: false }])}
+          disabled={!player.ready}
+          onClick={() => {
+            const start = Math.floor(player.currentTime());
+            update((cur) => ({ clips: [...toInputs(cur.clips), { start, duration: 10, label: "", approved: false }] }));
+          }}
         >
           ⚑ Mark play at current time
         </Button>
@@ -67,7 +77,7 @@ export function SessionPage() {
       <section className="grid content-start gap-3">
         <div className="flex items-center justify-between">
           <h2 className="font-semibold">Clips ({s.clips.length})</h2>
-          <Button size="sm" variant="outline" disabled={busy || unapproved === 0} onClick={() => update(clips.map((c) => ({ ...c, approved: true })))}>
+          <Button size="sm" variant="outline" disabled={unapproved === 0} onClick={() => update((cur) => ({ clips: toInputs(cur.clips).map((c) => ({ ...c, approved: true })) }))}>
             Approve all remaining ({unapproved})
           </Button>
         </div>
@@ -77,13 +87,12 @@ export function SessionPage() {
             key={c.id}
             clip={c}
             issues={s.issues.filter((i) => i.clipId === c.id)}
-            busy={busy}
             playerReady={player.ready}
             previewing={player.previewing === c.id}
             onPreview={() => player.preview(c.id, c.effStart, c.effDuration)}
             onStop={player.stopPreview}
             onPatch={(p) => patch(c.id, p)}
-            onRemove={() => update(clips.filter((x) => x.id !== c.id))}
+            onRemove={() => update((cur) => ({ clips: toInputs(cur.clips).filter((x) => x.id !== c.id) }))}
           />
         ))}
         <ProcessPanel session={s} />

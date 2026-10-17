@@ -13,7 +13,6 @@ const clampDuration = (d: number) => Math.min(MAX, Math.max(MIN, Math.round(d * 
 interface Props {
   clip: ClipView;
   issues: Issue[];
-  busy: boolean;
   playerReady: boolean;
   previewing: boolean;
   onPreview: () => void;
@@ -22,7 +21,7 @@ interface Props {
   onRemove: () => void;
 }
 
-export function ClipRow({ clip, issues, busy, playerReady, previewing, onPreview, onStop, onPatch, onRemove }: Props) {
+export function ClipRow({ clip, issues, playerReady, previewing, onPreview, onStop, onPatch, onRemove }: Props) {
   const [label, setLabel] = useState(clip.label);
   const [duration, setDuration] = useState(String(clip.duration));
   useEffect(() => setLabel(clip.label), [clip.label]);
@@ -38,9 +37,9 @@ export function ClipRow({ clip, issues, busy, playerReady, previewing, onPreview
     <Card className={cn("gap-2 p-3", clip.approved && "border-green-600/60")}>
       <div className="flex flex-wrap items-center gap-2">
         <span className="w-8 font-mono text-sm text-muted-foreground">#{clip.index}</span>
-        <Button size="sm" variant="ghost" disabled={busy || clip.start < 1} onClick={() => onPatch({ start: Math.max(0, clip.start - 1) })} aria-label="Start one second earlier">−1s</Button>
+        <Button size="sm" variant="ghost" disabled={clip.start < 1} onClick={() => onPatch({ start: Math.max(0, clip.start - 1) })} aria-label="Start one second earlier">−1s</Button>
         <span className="w-16 text-center font-mono">{clip.startText}</span>
-        <Button size="sm" variant="ghost" disabled={busy} onClick={() => onPatch({ start: clip.start + 1 })} aria-label="Start one second later">+1s</Button>
+        <Button size="sm" variant="ghost" onClick={() => onPatch({ start: clip.start + 1 })} aria-label="Start one second later">+1s</Button>
         <Input
           className="min-w-32 flex-1"
           placeholder="Label (optional)"
@@ -52,7 +51,7 @@ export function ClipRow({ clip, issues, busy, playerReady, previewing, onPreview
       </div>
       <div className="flex flex-wrap items-center gap-2">
         {[-2, 2, 5].map((d) => (
-          <Button key={d} size="sm" variant="outline" disabled={busy} onClick={() => onPatch({ duration: clampDuration(clip.duration + d) })}>
+          <Button key={d} size="sm" variant="outline" onClick={() => onPatch({ duration: clampDuration(clip.duration + d) })}>
             {d > 0 ? `+${d}s` : `−${-d}s`}
           </Button>
         ))}
@@ -75,10 +74,10 @@ export function ClipRow({ clip, issues, busy, playerReady, previewing, onPreview
           <Button size="sm" variant="secondary" disabled={!playerReady} onClick={onPreview}>▶ Preview</Button>
         )}
         <label className="ml-auto flex items-center gap-2 text-sm">
-          <Checkbox checked={clip.approved} disabled={busy} onCheckedChange={(v) => onPatch({ approved: v === true })} />
+          <Checkbox checked={clip.approved} onCheckedChange={(v) => onPatch({ approved: v === true })} />
           Looks good
         </label>
-        <Button size="sm" variant="ghost" disabled={busy} onClick={onRemove}>Remove</Button>
+        <Button size="sm" variant="ghost" onClick={onRemove}>Remove</Button>
       </div>
       {issues.map((issue, i) => (
         <p key={i} className={cn("text-xs", issue.severity === "error" ? "text-destructive" : "text-amber-600")}>
