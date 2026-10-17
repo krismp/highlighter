@@ -65,6 +65,7 @@ func main() {
 		OpenPath:    func(p string) error { return exec.Command("open", p).Run() },
 		NewID:       newID,
 		UI:          ui.FS(),
+		Port:        *port,
 	})
 
 	addr := fmt.Sprintf("127.0.0.1:%d", *port)

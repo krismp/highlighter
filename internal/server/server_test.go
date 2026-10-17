@@ -47,6 +47,7 @@ type env struct {
 	resolver *fakeResolver
 	jobs     *job.Manager
 	out      string
+	cfg      string
 }
 
 func newEnv(t *testing.T) *env {
@@ -74,7 +75,7 @@ func newEnv(t *testing.T) *env {
 	})
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
-	return &env{srv: srv, resolver: res, jobs: jobs, out: out}
+	return &env{srv: srv, resolver: res, jobs: jobs, out: out, cfg: filepath.Join(dir, "config")}
 }
 
 func (e *env) do(t *testing.T, method, path string, body any) (int, []byte) {
@@ -85,6 +86,9 @@ func (e *env) do(t *testing.T, method, path string, body any) (int, []byte) {
 		r = bytes.NewReader(b)
 	}
 	req, _ := http.NewRequest(method, e.srv.URL+path, r)
+	if method != "GET" && method != "HEAD" {
+		req.Header.Set("Content-Type", "application/json")
+	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
@@ -296,5 +300,74 @@ func TestSPAAndUnknownAPI(t *testing.T) {
 	}
 	if code, _ := e.do(t, "GET", "/api/sessions/aaaaaaaaaaa", nil); code != 404 {
 		t.Errorf("missing session: %d; want 404", code)
+	}
+}
+
+func TestRejectsForeignHost(t *testing.T) {
+	e := newEnv(t)
+	for _, host := range []string{"evil.com:7777", "evil.com", "127.0.0.1.evil.com:80"} {
+		req, _ := http.NewRequest("GET", e.srv.URL+"/api/health", nil)
+		req.Host = host
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode != 403 || !strings.Contains(string(data), "forbidden host") {
+			t.Errorf("host %q: %d %s; want 403 forbidden host", host, resp.StatusCode, data)
+		}
+	}
+}
+
+func TestRequiresJSONContentTypeOnWrites(t *testing.T) {
+	e := newEnv(t)
+	req, _ := http.NewRequest("POST", e.srv.URL+"/api/tools/update-ytdlp", strings.NewReader("{}"))
+	req.Header.Set("Content-Type", "text/plain")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 415 {
+		t.Errorf("text/plain POST: %d; want 415", resp.StatusCode)
+	}
+	if code, _ := e.do(t, "POST", "/api/tools/update-ytdlp", nil); code != 200 {
+		t.Errorf("json POST: %d; want 200", code)
+	}
+	if code, _ := e.do(t, "GET", "/api/health", nil); code != 200 {
+		t.Errorf("GET: %d; want 200", code)
+	}
+}
+
+func TestPortPinnedHostCheck(t *testing.T) {
+	h := hostGuard(7777, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	for host, want := range map[string]int{
+		"127.0.0.1:7777": 200, "localhost:7777": 200, "127.0.0.1:8888": 403, "evil.com:7777": 403, "127.0.0.1": 403,
+	} {
+		req := httptest.NewRequest("GET", "/api/health", nil)
+		req.Host = host
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != want {
+			t.Errorf("host %q: %d; want %d", host, rec.Code, want)
+		}
+	}
+}
+
+func TestOpenVideoDoesNotOverwriteCorruptSession(t *testing.T) {
+	e := newEnv(t)
+	e.open(t)
+	path := filepath.Join(e.cfg, "sessions", vid+".json")
+	garbage := []byte("{not json")
+	if err := os.WriteFile(path, garbage, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if code, data := e.do(t, "POST", "/api/sessions", map[string]string{"url": "https://youtu.be/" + vid}); code != 500 {
+		t.Errorf("corrupt session: %d %s; want 500", code, data)
+	}
+	got, _ := os.ReadFile(path)
+	if !bytes.Equal(got, garbage) {
+		t.Errorf("session file was overwritten: %s", got)
 	}
 }

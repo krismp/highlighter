@@ -7,11 +7,13 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net"
 	"net/http"
 	"os"
 	"path"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/krismp/highlighter/internal/clip"
@@ -33,6 +35,7 @@ type Deps struct {
 	OpenPath    func(string) error
 	NewID       func() string
 	UI          fs.FS
+	Port        int // listen port; 0 accepts any port (tests)
 }
 
 type server struct{ Deps }
@@ -56,7 +59,32 @@ func New(d Deps) http.Handler {
 	mux.HandleFunc("GET /api/sessions/{id}/files/{name}", s.file)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) { writeError(w, 404, "not found") })
 	mux.Handle("/", spa(d.UI))
-	return mux
+	return hostGuard(d.Port, mux)
+}
+
+// hostGuard rejects foreign Host headers (DNS rebinding) and non-JSON writes
+// to /api/ (cross-site simple-request CSRF).
+func hostGuard(port int, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !allowedHost(r.Host, port) {
+			writeError(w, 403, "forbidden host")
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/api/") && r.Method != http.MethodGet && r.Method != http.MethodHead &&
+			!strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
+			writeError(w, 415, "Content-Type must be application/json")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func allowedHost(hostport string, port int) bool {
+	host, p, err := net.SplitHostPort(hostport)
+	if err != nil || (host != "127.0.0.1" && host != "localhost") {
+		return false
+	}
+	return port == 0 || p == strconv.Itoa(port)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -186,10 +214,15 @@ func (s *server) openVideo(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, err.Error())
 		return
 	}
-	if sess, err := s.Store.LoadSession(id); err == nil {
+	sess, err := s.Store.LoadSession(id)
+	if err == nil {
 		if st, ok := s.settings(w); ok {
 			writeJSON(w, 200, buildView(sess, st.OutputRoot))
 		}
+		return
+	}
+	if !errors.Is(err, store.ErrNotFound) {
+		writeError(w, 500, err.Error())
 		return
 	}
 	info, err := s.Resolver.Resolve(r.Context(), canonical)
@@ -288,6 +321,10 @@ func (s *server) process(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 409, err.Error())
 		return
 	}
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
 	writeJSON(w, 202, jv)
 }
 
@@ -298,6 +335,8 @@ func (s *server) retry(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 404, err.Error())
 	case errors.Is(err, job.ErrNotRetryable):
 		writeError(w, 409, err.Error())
+	case err != nil:
+		writeError(w, 500, err.Error())
 	default:
 		writeJSON(w, 200, jv)
 	}
