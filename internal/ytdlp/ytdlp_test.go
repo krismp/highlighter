@@ -41,7 +41,7 @@ func TestParseURL(t *testing.T) {
 
 func TestResolveArgs(t *testing.T) {
 	got := ResolveArgs("https://www.youtube.com/watch?v=x")
-	want := []string{"-J", "--no-playlist", "--no-warnings", "-f", FormatSelector, "-S", "vcodec:h264", "https://www.youtube.com/watch?v=x"}
+	want := []string{"-J", "--no-playlist", "--no-warnings", "--encoding", "utf-8", "-f", FormatSelector, "-S", "vcodec:h264", "https://www.youtube.com/watch?v=x"}
 	if !slices.Equal(got, want) {
 		t.Errorf("got %v", got)
 	}
