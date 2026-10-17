@@ -49,6 +49,7 @@ type env struct {
 	out      string
 	cfg      string
 	revealed *[]string // paths passed to RevealPath
+	quit     chan struct{}
 }
 
 func newEnv(t *testing.T) *env {
@@ -64,12 +65,14 @@ func newEnv(t *testing.T) *env {
 	jobs.Backoff = []time.Duration{0, 0}
 	n := 0
 	revealed := &[]string{}
+	quit := make(chan struct{}, 1)
 	h := New(Deps{
 		Store: st, Jobs: jobs, Resolver: res, Encoder: ffmpeg.X264,
 		Health:      func(context.Context) tools.Status { return tools.Status{Encoder: "libx264"} },
 		UpdateYtDlp: func(context.Context) (string, error) { return "updated", nil },
 		OpenPath:    func(string) error { return nil },
 		RevealPath:  func(p string) error { *revealed = append(*revealed, p); return nil },
+		Quit:        func() { quit <- struct{}{} },
 		NewID:       func() string { n++; return fmt.Sprintf("c%d", n) },
 		UI: fstest.MapFS{
 			"index.html":    {Data: []byte("<html>app</html>")},
@@ -78,7 +81,7 @@ func newEnv(t *testing.T) *env {
 	})
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
-	return &env{srv: srv, resolver: res, jobs: jobs, out: out, cfg: filepath.Join(dir, "config"), revealed: revealed}
+	return &env{srv: srv, resolver: res, jobs: jobs, out: out, cfg: filepath.Join(dir, "config"), revealed: revealed, quit: quit}
 }
 
 func (e *env) do(t *testing.T, method, path string, body any) (int, []byte) {
@@ -411,6 +414,26 @@ func TestReelOnlyWithCustomName(t *testing.T) {
 	}
 	if code, _ := e.do(t, "GET", "/api/sessions/"+vid+"/files/"+v.Clips[0].File, nil); code == 200 {
 		t.Error("reel-only mode must not leave clip files in the output folder")
+	}
+}
+
+func TestPing(t *testing.T) {
+	e := newEnv(t)
+	code, data := e.do(t, "GET", "/api/ping", nil)
+	if code != 200 || decode[map[string]string](t, data)["app"] != "highlighter" {
+		t.Fatalf("ping: %d %s", code, data)
+	}
+}
+
+func TestQuitRespondsThenStops(t *testing.T) {
+	e := newEnv(t)
+	if code, data := e.do(t, "POST", "/api/quit", nil); code != 204 {
+		t.Fatalf("quit: %d %s", code, data)
+	}
+	select {
+	case <-e.quit:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Quit was not called")
 	}
 }
 

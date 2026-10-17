@@ -12,12 +12,16 @@ import (
 
 // Runner executes the ffmpeg binary.
 type Runner struct {
-	Bin string
+	Bin    string
+	CAFile string // passed to every cut; see CutSpec.CAFile
 }
 
 // Cut writes spec.Output via a ".part" file that is renamed on success.
 func (r Runner) Cut(ctx context.Context, spec CutSpec, onProgress func(float64)) error {
 	final := spec.Output
+	if spec.CAFile == "" {
+		spec.CAFile = r.CAFile
+	}
 	spec.Output = final + ".part"
 	defer os.Remove(spec.Output)
 	err := r.run(ctx, CutArgs(spec), func(line string) {

@@ -40,8 +40,9 @@ type Settings struct {
 	DefaultDuration float64 `json:"defaultDuration"` // length of newly added clips, seconds
 }
 
-func DefaultSettings(home string) Settings {
-	return Settings{OutputRoot: filepath.Join(home, "Movies", "Highlights"), Concurrency: 3, DefaultDuration: clip.DefaultDuration}
+// DefaultSettings saves clips under videosDir (~/Movies on macOS, ~/Videos on Windows).
+func DefaultSettings(videosDir string) Settings {
+	return Settings{OutputRoot: filepath.Join(videosDir, "Highlights"), Concurrency: 3, DefaultDuration: clip.DefaultDuration}
 }
 
 type Store struct {

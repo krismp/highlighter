@@ -1,0 +1,17 @@
+Highlighter bundles these programs unmodified. Each is a separate program
+under its own license; highlighter runs them as external processes.
+
+yt-dlp — https://github.com/yt-dlp/yt-dlp
+  The Unlicense (public domain). The standalone build also includes Python
+  and other components under their own licenses; see the yt-dlp repository.
+
+FFmpeg — https://ffmpeg.org
+  Licensed under the GNU General Public License v3 (this build includes
+  libx264 and other GPL components). Source code: https://ffmpeg.org/download.html
+  macOS builds: https://ffmpeg.martin-riedl.de
+  Windows builds: https://www.gyan.dev/ffmpeg/builds/
+  Corresponding source for the exact builds is available from those pages.
+
+Deno — https://deno.com
+  MIT License. Copyright 2018-2026 the Deno authors.
+  https://github.com/denoland/deno/blob/main/LICENSE.md

@@ -12,7 +12,7 @@ import (
 
 func newStore(t *testing.T) *Store {
 	t.Helper()
-	s, err := New(t.TempDir(), DefaultSettings("/Users/me"))
+	s, err := New(t.TempDir(), DefaultSettings("/Users/me/Movies"))
 	if err != nil {
 		t.Fatal(err)
 	}

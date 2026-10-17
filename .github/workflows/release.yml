@@ -1,0 +1,94 @@
+# Builds self-contained installers for macOS (Apple Silicon, Intel) and
+# Windows, smoke-tests each on its own kind of machine, and on a v* tag
+# publishes them as a GitHub release. Run it by hand (Actions > release >
+# Run workflow) to get the installers as workflow artifacts without releasing.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    # All targets build on macOS: the .dmg needs codesign and hdiutil, and Go
+    # cross-compiles the Windows binary.
+    runs-on: macos-15
+    strategy:
+      matrix:
+        target: [macos-arm64, macos-amd64, windows-amd64]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.5.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: go test ./...
+      - run: scripts/package.sh ${{ matrix.target }} ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: dist/Highlighter-*
+          if-no-files-found: error
+          compression-level: 0
+
+  smoke:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: macos-arm64
+            runner: macos-15
+          - target: macos-amd64
+            runner: macos-15-intel
+          - target: windows-amd64
+            runner: windows-latest
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      YOUTUBE_OPTIONAL: "1" # YouTube often blocks datacenter IPs
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: dist
+      - name: Install from the .dmg
+        if: runner.os == 'macOS'
+        run: |
+          hdiutil attach -nobrowse -mountpoint /tmp/hl dist/*.dmg
+          cp -R /tmp/hl/Highlighter.app "$RUNNER_TEMP/"
+          hdiutil detach /tmp/hl
+          scripts/smoke-test.sh "$RUNNER_TEMP/Highlighter.app"
+      - name: Install from the .zip
+        if: runner.os == 'Windows'
+        run: |
+          unzip -q dist/*.zip -d "$RUNNER_TEMP/win"
+          scripts/smoke-test.sh "$RUNNER_TEMP/win/Highlighter/Highlighter.exe"
+
+  release:
+    if: github.ref_type == 'tag'
+    needs: smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/Highlighter-* --title "Highlighter $GITHUB_REF_NAME" --notes-file packaging/RELEASE_NOTES.md

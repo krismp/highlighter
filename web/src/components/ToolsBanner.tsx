@@ -13,7 +13,8 @@ export function ToolsBanner() {
     <div className={missing ? "rounded-md border border-destructive p-3 text-sm" : "rounded-md border p-3 text-sm text-muted-foreground"}>
       {missing ? (
         <p>
-          yt-dlp and ffmpeg are required. Run <code className="font-mono">brew install yt-dlp ffmpeg</code>, then reload.
+          {!ytDlp.found && !ffmpeg.found ? "yt-dlp and ffmpeg were" : !ytDlp.found ? "yt-dlp was" : "ffmpeg was"} not found.
+          They ship with highlighter, so download and reinstall the app, then open it again.
         </p>
       ) : (
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">

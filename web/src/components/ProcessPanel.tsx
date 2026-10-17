@@ -5,6 +5,7 @@ import { OpenVideoForm } from "@/components/OpenVideoForm";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useFileManager } from "@/hooks/useFileManager";
 import { api, type JobStatus, type JobView, type OutputMode, type SessionView } from "@/lib/api";
 import { bytes, length } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -104,15 +105,16 @@ function StatusChip({ status, progress }: { status: JobStatus; progress?: number
   );
 }
 
-/** A finished file is already on disk: say so, and offer to point at it in Finder. */
+/** A finished file is already on disk: say so, and offer to point at it in Finder / File Explorer. */
 function Saved({ onReveal, pending }: { onReveal: () => void; pending: boolean }) {
+  const fileManager = useFileManager();
   return (
     <span className="inline-flex items-center gap-1">
       <span className="inline-flex items-center gap-1 font-medium text-net">
         <CircleCheck className="size-4" /> Saved
       </span>
-      <Button size="sm" variant="ghost" disabled={pending} onClick={onReveal} title="Show this file in Finder">
-        <Search className="size-3.5" /> Show in Finder
+      <Button size="sm" variant="ghost" disabled={pending} onClick={onReveal} title={`Show this file in ${fileManager}`}>
+        <Search className="size-3.5" /> Show in {fileManager}
       </Button>
     </span>
   );
