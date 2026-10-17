@@ -254,3 +254,43 @@ func TestSubscribeReceivesUpdates(t *testing.T) {
 		}
 	}
 }
+
+// failThenGate fails every cut until fail is cleared, then blocks on gate.
+type failThenGate struct {
+	fail atomic.Bool
+	gate chan struct{}
+}
+
+func (f *failThenGate) Cut(ctx context.Context, spec ffmpeg.CutSpec, onProgress func(float64)) error {
+	if f.fail.Load() {
+		return errors.New("boom")
+	}
+	<-f.gate
+	return nil
+}
+
+func (f *failThenGate) Concat(ctx context.Context, inputs []string, output string) error { return nil }
+
+func TestRetryAndStartNeverBothSucceed(t *testing.T) {
+	for range 50 {
+		c := &failThenGate{gate: make(chan struct{})}
+		c.fail.Store(true)
+		m := NewManager(&fakeResolver{}, c)
+		m.Backoff = nil
+		m.Start(request(1, false))
+		waitFor(t, m, idle)
+		c.fail.Store(false)
+
+		var wg sync.WaitGroup
+		var retryErr, startErr error
+		wg.Add(2)
+		go func() { defer wg.Done(); _, retryErr = m.Retry("abc", "a") }()
+		go func() { defer wg.Done(); _, startErr = m.Start(request(1, false)) }()
+		wg.Wait()
+		if retryErr == nil && startErr == nil {
+			t.Fatal("Retry and Start both succeeded: two jobs running for one session")
+		}
+		close(c.gate)
+		waitFor(t, m, idle)
+	}
+}

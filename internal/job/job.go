@@ -167,9 +167,11 @@ func (m *Manager) Start(req Request) (View, error) {
 
 func (m *Manager) Retry(sessionID, clipID string) (View, error) {
 	m.mu.Lock()
+	// Hold m.mu across the state change so Start cannot replace the job
+	// between lookup and update (which would bypass ErrBusy).
 	j, ok := m.jobs[sessionID]
-	m.mu.Unlock()
 	if !ok {
+		m.mu.Unlock()
 		return View{}, ErrNotFound
 	}
 	if clipID == ConcatID {
@@ -180,6 +182,7 @@ func (m *Manager) Retry(sessionID, clipID string) (View, error) {
 				retryable = true
 			}
 		})
+		m.mu.Unlock()
 		if !retryable {
 			return v, ErrNotRetryable
 		}
@@ -200,6 +203,7 @@ func (m *Manager) Retry(sessionID, clipID string) (View, error) {
 			}
 		}
 	})
+	m.mu.Unlock()
 	if idx < 0 {
 		return v, ErrNotFound
 	}
