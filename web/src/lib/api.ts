@@ -9,7 +9,7 @@ export interface SessionView {
 export type ClipInput = Omit<Clip, "id"> & { id?: string };
 export interface RecentSession { videoId: string; title: string; clipCount: number; updatedAt: string }
 export interface ToolStatus { found: boolean; path: string; version: string }
-export interface Health { ytDlp: ToolStatus; ffmpeg: ToolStatus; encoder: string }
+export interface Health { ytDlp: ToolStatus; ffmpeg: ToolStatus; deno: ToolStatus; encoder: string; os: string }
 export interface Settings { outputRoot: string; concurrency: number; defaultDuration: number }
 export interface LineError { line: number; text: string; err: string }
 export type JobStatus = "queued" | "processing" | "done" | "failed";
@@ -47,6 +47,7 @@ export const toInputs = (clips: ClipView[]): ClipInput[] =>
 export const api = {
   health: () => request<Health>("GET", "/health"),
   updateYtDlp: () => request<{ output: string }>("POST", "/tools/update-ytdlp"),
+  quit: () => request<void>("POST", "/quit"),
   settings: () => request<Settings>("GET", "/settings"),
   saveSettings: (s: Settings) => request<Settings>("PUT", "/settings", s),
   recent: () => request<RecentSession[]>("GET", "/sessions"),

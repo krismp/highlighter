@@ -122,13 +122,27 @@ func ParseInfo(data []byte) (Info, error) {
 
 // Client runs the yt-dlp binary.
 type Client struct {
-	Bin string
+	Bin    string
+	Locate func() string // when set, finds the binary on every run, so an updated yt-dlp is picked up
+	Deno   string        // JavaScript runtime for YouTube's player challenges; "" lets yt-dlp search PATH
+}
+
+// Args is ResolveArgs plus the runtime location, when one is known.
+func (c Client) Args(url string) []string {
+	if c.Deno == "" {
+		return ResolveArgs(url)
+	}
+	return append([]string{"--js-runtimes", "deno:" + c.Deno}, ResolveArgs(url)...)
 }
 
 func (c Client) Resolve(ctx context.Context, url string) (Info, error) {
 	ctx, cancel := context.WithTimeout(ctx, 90*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, c.Bin, ResolveArgs(url)...)
+	bin := c.Bin
+	if c.Locate != nil {
+		bin = c.Locate()
+	}
+	cmd := exec.CommandContext(ctx, bin, c.Args(url)...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()

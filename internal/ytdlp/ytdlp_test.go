@@ -47,6 +47,17 @@ func TestResolveArgs(t *testing.T) {
 	}
 }
 
+func TestClientArgsPointAtDeno(t *testing.T) {
+	url := "https://www.youtube.com/watch?v=x"
+	if got := (Client{}).Args(url); !slices.Equal(got, ResolveArgs(url)) {
+		t.Errorf("no deno: got %v", got)
+	}
+	got := Client{Deno: "/app/tools/deno"}.Args(url)
+	if !slices.Equal(got[:2], []string{"--js-runtimes", "deno:/app/tools/deno"}) || !slices.Equal(got[2:], ResolveArgs(url)) {
+		t.Errorf("with deno: got %v", got)
+	}
+}
+
 func TestParseInfoSplitStreams(t *testing.T) {
 	data := []byte(`{"id":"abc","title":"Fun Game","duration":3600.5,"width":1920,"height":1080,"live_status":"was_live",
 	 "requested_formats":[

@@ -29,6 +29,20 @@ func TestCutArgsSplitStreamsVideoToolbox(t *testing.T) {
 	}
 }
 
+func TestCutArgsCAFileOnEveryInput(t *testing.T) {
+	got := CutArgs(CutSpec{Video: ytdlp.Stream{URL: "https://v"}, Audio: &ytdlp.Stream{URL: "https://a"},
+		Duration: 5, Encoder: X264, Output: "o.mp4", CAFile: "/app/tools/cacert.pem"})
+	n := 0
+	for i, a := range got {
+		if a == "-ca_file" && got[i+1] == "/app/tools/cacert.pem" {
+			n++
+		}
+	}
+	if n != 2 {
+		t.Errorf("want -ca_file before both inputs, got %q", got)
+	}
+}
+
 func TestCutArgsMuxedStreamX264(t *testing.T) {
 	got := CutArgs(CutSpec{Video: ytdlp.Stream{URL: "https://m"}, Start: 0, Duration: 10, Encoder: X264, Output: "o.mp4"})
 	for _, frag := range [][]string{

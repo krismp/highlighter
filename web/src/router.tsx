@@ -1,4 +1,5 @@
 import { createRootRoute, createRoute, createRouter, Link, Outlet } from "@tanstack/react-router";
+import { QuitButton } from "@/components/QuitButton";
 import { HomePage } from "@/routes/HomePage";
 import { SessionPage } from "@/routes/SessionPage";
 
@@ -12,6 +13,7 @@ const rootRoute = createRootRoute({
             <span className="font-heading text-xl font-bold">highlighter</span>
           </Link>
           <span className="hidden text-sm text-white/60 sm:inline">Cut every play out of a match</span>
+          <QuitButton />
         </div>
         <div className="h-1 bg-court" aria-hidden />
       </header>

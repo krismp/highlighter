@@ -16,6 +16,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/krismp/highlighter/internal/clip"
 	"github.com/krismp/highlighter/internal/ffmpeg"
@@ -34,7 +35,8 @@ type Deps struct {
 	Health      func(context.Context) tools.Status
 	UpdateYtDlp func(context.Context) (string, error)
 	OpenPath    func(string) error
-	RevealPath  func(string) error // show a file selected in Finder
+	RevealPath  func(string) error // show a file selected in Finder / File Explorer
+	Quit        func()             // stop the server; called after the response is sent
 	NewID       func() string
 	UI          fs.FS
 	Port        int // listen port; 0 accepts any port (tests)
@@ -45,8 +47,10 @@ type server struct{ Deps }
 func New(d Deps) http.Handler {
 	s := &server{d}
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /api/ping", s.ping)
 	mux.HandleFunc("GET /api/health", s.health)
 	mux.HandleFunc("POST /api/tools/update-ytdlp", s.updateYtDlp)
+	mux.HandleFunc("POST /api/quit", s.quit)
 	mux.HandleFunc("GET /api/settings", s.getSettings)
 	mux.HandleFunc("PUT /api/settings", s.putSettings)
 	mux.HandleFunc("GET /api/sessions", s.listSessions)
@@ -149,6 +153,11 @@ func (s *server) saveAndRespond(w http.ResponseWriter, sess store.Session, wrap 
 	writeJSON(w, 200, v)
 }
 
+// ping is a cheap "is highlighter here?" check for a second launch.
+func (s *server) ping(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, 200, map[string]string{"app": "highlighter"})
+}
+
 func (s *server) health(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, s.Health(r.Context()))
 }
@@ -160,6 +169,21 @@ func (s *server) updateYtDlp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, map[string]string{"output": out})
+}
+
+func (s *server) quit(w http.ResponseWriter, r *http.Request) {
+	if s.Quit == nil {
+		writeError(w, 501, "quit is not available")
+		return
+	}
+	w.WriteHeader(204)
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
+	}
+	go func() {
+		time.Sleep(200 * time.Millisecond) // let the response reach the browser
+		s.Quit()
+	}()
 }
 
 func (s *server) getSettings(w http.ResponseWriter, r *http.Request) {

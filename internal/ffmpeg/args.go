@@ -25,13 +25,14 @@ type CutSpec struct {
 	Duration float64
 	Encoder  Encoder
 	Output   string
+	CAFile   string // CA bundle for HTTPS inputs; static ffmpeg builds cannot read the OS trust store
 }
 
 func CutArgs(s CutSpec) []string {
 	args := []string{"-hide_banner", "-nostdin", "-y", "-loglevel", "error", "-progress", "pipe:1", "-nostats"}
-	args = append(args, inputArgs(s.Video, s.Start)...)
+	args = append(args, inputArgs(s.Video, s.Start, s.CAFile)...)
 	if s.Audio != nil {
-		args = append(args, inputArgs(*s.Audio, s.Start)...)
+		args = append(args, inputArgs(*s.Audio, s.Start, s.CAFile)...)
 	}
 	args = append(args, "-t", seconds(s.Duration), "-map", "0:v:0")
 	if s.Audio != nil {
@@ -44,9 +45,12 @@ func CutArgs(s CutSpec) []string {
 		"-movflags", "+faststart", "-f", "mp4", s.Output)
 }
 
-func inputArgs(st ytdlp.Stream, start float64) []string {
+func inputArgs(st ytdlp.Stream, start float64, caFile string) []string {
 	args := []string{"-reconnect", "1", "-reconnect_delay_max", "5",
 		"-rw_timeout", "30000000"} // 30s I/O stall limit, in microseconds
+	if caFile != "" {
+		args = append(args, "-ca_file", caFile)
+	}
 	if h := headerBlob(st.Headers); h != "" {
 		args = append(args, "-headers", h)
 	}

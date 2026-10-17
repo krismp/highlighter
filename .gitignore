@@ -3,3 +3,4 @@ internal/ui/dist/*
 !internal/ui/dist/.gitkeep
 web/node_modules/
 .DS_Store
+/dist/
