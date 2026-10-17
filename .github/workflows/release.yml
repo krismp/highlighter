@@ -1,12 +1,21 @@
 # Builds self-contained installers for macOS (Apple Silicon, Intel) and
 # Windows, smoke-tests each on its own kind of machine, and on a v* tag
-# publishes them as a GitHub release. Run it by hand (Actions > release >
-# Run workflow) to get the installers as workflow artifacts without releasing.
+# publishes them as a GitHub release. Branch pushes that touch packaging (and
+# manual runs) build and test only; the installers are kept as artifacts.
 name: release
 
 on:
   push:
     tags: ["v*"]
+    branches-ignore: [main]
+    paths: # not applied to tag pushes
+      - .github/workflows/release.yml
+      - scripts/**
+      - packaging/**
+      - cmd/**
+      - internal/tools/**
+      - internal/desktop/**
+      - internal/ffmpeg/**
   workflow_dispatch:
 
 permissions:
