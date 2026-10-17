@@ -1,32 +1,20 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
-import { Link, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
+import { OpenVideoForm } from "@/components/OpenVideoForm";
 import { SettingsCard } from "@/components/SettingsCard";
 import { ToolsBanner } from "@/components/ToolsBanner";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api";
 
 export function HomePage() {
-  const navigate = useNavigate();
-  const [url, setUrl] = useState("");
   const recent = useQuery({ queryKey: ["recent"], queryFn: api.recent });
-  const open = useMutation({
-    mutationFn: () => api.openVideo(url),
-    onSuccess: (s) => navigate({ to: "/s/$videoId", params: { videoId: s.videoId } }),
-  });
   return (
     <div className="grid gap-6">
       <ToolsBanner />
       <Card>
         <CardHeader><CardTitle>Clip a match</CardTitle></CardHeader>
         <CardContent>
-          <form className="flex flex-col gap-2 sm:flex-row" onSubmit={(e) => { e.preventDefault(); open.mutate(); }}>
-            <Input autoFocus placeholder="https://www.youtube.com/watch?v=…" value={url} onChange={(e) => setUrl(e.target.value)} />
-            <Button type="submit" disabled={!url.trim() || open.isPending}>{open.isPending ? "Loading…" : "Open"}</Button>
-          </form>
-          {open.error && <p className="mt-2 text-sm text-destructive">{open.error.message}</p>}
+          <OpenVideoForm autoFocus />
         </CardContent>
       </Card>
       {recent.data && recent.data.length > 0 && (

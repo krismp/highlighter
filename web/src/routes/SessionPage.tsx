@@ -4,17 +4,28 @@ import { Plus } from "lucide-react";
 import { useEffect, useState } from "react";
 import { AddClips } from "@/components/AddClips";
 import { ClipRow } from "@/components/ClipRow";
-import { ProcessPanel } from "@/components/ProcessPanel";
+import { JobResults, ProcessPanel } from "@/components/ProcessPanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useJob } from "@/hooks/useJob";
 import { useYouTubePlayer } from "@/hooks/useYouTubePlayer";
 import { api, toInputs, type ClipInput, type SessionView } from "@/lib/api";
 import { clock } from "@/lib/format";
 
 export function SessionPage() {
   const { videoId } = useParams({ from: "/s/$videoId" });
+  // Keyed so opening the next video from the results starts with fresh page state.
+  return <Session key={videoId} videoId={videoId} />;
+}
+
+function Session({ videoId }: { videoId: string }) {
   const qc = useQueryClient();
+  const job = useJob(videoId);
+  // The results replace the clip list while a run is going, and stay after it
+  // ends until "Edit these clips".
+  const [resultsOpen, setResultsOpen] = useState(false);
+  const showResults = job !== null && (resultsOpen || job.running);
   const session = useQuery({ queryKey: ["session", videoId], queryFn: () => api.session(videoId) });
   const player = useYouTubePlayer(videoId, session.data !== undefined);
   const setSession = (v: SessionView) => qc.setQueryData(["session", videoId], v);
@@ -82,7 +93,7 @@ export function SessionPage() {
           </div>
         </div>
 
-        <div className="rounded-lg border bg-card p-4">
+        {!showResults && <div className="rounded-lg border bg-card p-4">
           <h2 className="font-heading text-lg font-semibold">Paste start times</h2>
           <p className="mb-3 text-sm text-muted-foreground">One per line, with an optional label after the time.</p>
           <AddClips videoId={videoId} onAdded={setSession} />
@@ -92,50 +103,54 @@ export function SessionPage() {
               onChange={(e) => setLeadIn(e.target.value)} onBlur={commitLeadIn} onKeyDown={(e) => e.key === "Enter" && commitLeadIn()} />
             <span className="text-sm text-muted-foreground">seconds added before every clip. Changing it clears approvals.</span>
           </div>
-        </div>
+        </div>}
         {save.error && <p className="text-sm text-destructive">{save.error.message}</p>}
       </section>
 
-      <section className="grid content-start gap-3">
-        <div className="flex flex-wrap items-end justify-between gap-2">
-          <div>
-            <h2 className="font-heading text-2xl font-bold">Clips</h2>
-            <p className="text-sm text-muted-foreground">
-              {s.clips.length === 0 ? "None yet" : `${approved} of ${s.clips.length} approved`}
+      {showResults ? (
+        <JobResults session={s} job={job} onEdit={() => setResultsOpen(false)} />
+      ) : (
+        <section className="grid content-start gap-3">
+          <div className="flex flex-wrap items-end justify-between gap-2">
+            <div>
+              <h2 className="font-heading text-2xl font-bold">Clips</h2>
+              <p className="text-sm text-muted-foreground">
+                {s.clips.length === 0 ? "None yet" : `${approved} of ${s.clips.length} approved`}
+              </p>
+            </div>
+            <Button size="sm" variant="outline" disabled={unapproved === 0}
+              onClick={() => update((cur) => ({ clips: toInputs(cur.clips).map((c) => ({ ...c, approved: true })) }))}>
+              Approve the other {unapproved}
+            </Button>
+          </div>
+          {s.clips.length > 0 && (
+            <div className="h-1.5 overflow-hidden rounded-full bg-muted" aria-hidden>
+              <div className="h-full bg-net transition-[width] duration-500" style={{ width: `${(approved / s.clips.length) * 100}%` }} />
+            </div>
+          )}
+          {s.clips.length === 0 && (
+            <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+              Add a clip from the player, or paste the start times of each play.
             </p>
-          </div>
-          <Button size="sm" variant="outline" disabled={unapproved === 0}
-            onClick={() => update((cur) => ({ clips: toInputs(cur.clips).map((c) => ({ ...c, approved: true })) }))}>
-            Approve the other {unapproved}
-          </Button>
-        </div>
-        {s.clips.length > 0 && (
-          <div className="h-1.5 overflow-hidden rounded-full bg-muted" aria-hidden>
-            <div className="h-full bg-net transition-[width] duration-500" style={{ width: `${(approved / s.clips.length) * 100}%` }} />
-          </div>
-        )}
-        {s.clips.length === 0 && (
-          <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-            Add a clip from the player, or paste the start times of each play.
-          </p>
-        )}
-        {s.clips.map((c) => (
-          <ClipRow
-            key={c.id}
-            clip={c}
-            issues={s.issues.filter((i) => i.clipId === c.id)}
-            playerReady={player.ready}
-            previewing={player.previewing === c.id}
-            playhead={player.playhead}
-            range={player.previewing === c.id ? player.range : null}
-            onPreview={() => player.preview(c.id, c.effStart, c.effDuration)}
-            onStop={player.stopPreview}
-            onPatch={(p) => patch(c.id, p)}
-            onRemove={() => update((cur) => ({ clips: toInputs(cur.clips).filter((x) => x.id !== c.id) }))}
-          />
-        ))}
-        <ProcessPanel session={s} />
-      </section>
+          )}
+          {s.clips.map((c) => (
+            <ClipRow
+              key={c.id}
+              clip={c}
+              issues={s.issues.filter((i) => i.clipId === c.id)}
+              playerReady={player.ready}
+              previewing={player.previewing === c.id}
+              playhead={player.playhead}
+              range={player.previewing === c.id ? player.range : null}
+              onPreview={() => player.preview(c.id, c.effStart, c.effDuration)}
+              onStop={player.stopPreview}
+              onPatch={(p) => patch(c.id, p)}
+              onRemove={() => update((cur) => ({ clips: toInputs(cur.clips).filter((x) => x.id !== c.id) }))}
+            />
+          ))}
+          <ProcessPanel session={s} busy={job?.running ?? false} onStarted={() => setResultsOpen(true)} />
+        </section>
+      )}
     </div>
   );
 }
