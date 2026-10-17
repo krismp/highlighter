@@ -54,9 +54,7 @@ func ParseURL(raw string) (id, canonical string, err error) {
 const FormatSelector = "bv*[height<=1080]+ba/b[height<=1080]/b"
 
 func ResolveArgs(url string) []string {
-	// --encoding: on Windows yt-dlp would write errors in the console's legacy
-	// code page. (-J itself is ASCII: titles arrive \u-escaped.)
-	return []string{"-J", "--no-playlist", "--no-warnings", "--encoding", "utf-8", "-f", FormatSelector, "-S", "vcodec:h264", url}
+	return []string{"-J", "--no-playlist", "--no-warnings", "-f", FormatSelector, "-S", "vcodec:h264", url}
 }
 
 type Stream struct {
