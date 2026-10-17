@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"os"
 	"os/exec"
 	"regexp"
 	"strings"
@@ -55,7 +54,9 @@ func ParseURL(raw string) (id, canonical string, err error) {
 const FormatSelector = "bv*[height<=1080]+ba/b[height<=1080]/b"
 
 func ResolveArgs(url string) []string {
-	return []string{"-J", "--no-playlist", "--no-warnings", "-f", FormatSelector, "-S", "vcodec:h264", url}
+	// --encoding: on Windows yt-dlp would write errors in the console's legacy
+	// code page. (-J itself is ASCII: titles arrive \u-escaped.)
+	return []string{"-J", "--no-playlist", "--no-warnings", "--encoding", "utf-8", "-f", FormatSelector, "-S", "vcodec:h264", url}
 }
 
 type Stream struct {
@@ -144,9 +145,6 @@ func (c Client) Resolve(ctx context.Context, url string) (Info, error) {
 		bin = c.Locate()
 	}
 	cmd := exec.CommandContext(ctx, bin, c.Args(url)...)
-	// Python's UTF-8 mode: on Windows yt-dlp would otherwise write its error
-	// messages in the legacy code page. (-J output is ASCII; titles arrive \u-escaped.)
-	cmd.Env = append(os.Environ(), "PYTHONUTF8=1")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
