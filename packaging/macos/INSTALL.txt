@@ -1,0 +1,28 @@
+HIGHLIGHTER FOR macOS
+=====================
+
+1. Double-click the .dmg file in this zip to open it.
+
+2. Drag "Highlighter" onto the "Applications" folder in the window that opens.
+
+3. Open your Applications folder and double-click Highlighter.
+
+   The first time, macOS says it cannot verify the developer, because the
+   app is not from the App Store. Click "Done", then:
+
+     - Open System Settings > Privacy & Security.
+     - Scroll down to "Highlighter was blocked..." and click "Open Anyway".
+     - Confirm with your password or Touch ID.
+
+   You only do this once.
+
+Highlighter opens in its own window. Close the window (or press Cmd+Q, or
+click "Quit" at the top right) to stop it.
+
+Everything Highlighter needs (yt-dlp, ffmpeg, deno) is inside the app.
+Nothing else to install. Clips are saved to Movies > Highlights
+(changeable in Settings).
+
+Still blocked? Open Terminal and run:
+    xattr -cr /Applications/Highlighter.app
+then open the app again.

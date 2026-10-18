@@ -21,6 +21,3 @@ func Reveal(path string) error {
 	_ = cmd.Run()
 	return nil
 }
-
-// Alert is a no-op: on Windows the app runs in a console window that shows the log.
-func Alert(title, message string) {}

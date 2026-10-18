@@ -32,7 +32,6 @@ var version = "dev" // set by scripts/package.sh
 func main() {
 	port := flag.Int("port", 7777, "port to listen on (127.0.0.1 only)")
 	noOpen := flag.Bool("no-open", false, "do not open the browser on start")
-	foreground := flag.Bool("foreground", false, "serve from this process even when started from the macOS app")
 	flag.Parse()
 
 	url := fmt.Sprintf("http://127.0.0.1:%d", *port)
@@ -41,10 +40,6 @@ func main() {
 		if !*noOpen {
 			_ = desktop.Open(url)
 		}
-		return
-	}
-	if !*foreground && inAppBundle() {
-		startBackground(url)
 		return
 	}
 
@@ -103,7 +98,6 @@ func main() {
 		log.Fatal(err)
 	}
 	log.Printf("highlighter running at %s", url)
-	log.Printf("keep this running while you use the app; click Quit in the app (or close this window) to stop")
 	if !*noOpen {
 		_ = desktop.Open(url)
 	}

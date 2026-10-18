@@ -22,11 +22,11 @@ dev-web:
 dist: web
 	SKIP_WEB=1 scripts/package.sh macos-arm64
 	SKIP_WEB=1 scripts/package.sh macos-amd64
-	SKIP_WEB=1 scripts/package.sh windows-amd64
 
 smoke:
 	rm -rf dist/smoke && mkdir -p dist/smoke
-	hdiutil attach -quiet -nobrowse -mountpoint dist/smoke/mnt $$(ls -t dist/Highlighter-*-macos-apple-silicon.dmg | head -1)
+	unzip -q $$(ls -t dist/Highlighter-*-macos-apple-silicon.zip | head -1) -d dist/smoke
+	hdiutil attach -quiet -nobrowse -mountpoint dist/smoke/mnt dist/smoke/*/*.dmg
 	cp -R dist/smoke/mnt/Highlighter.app dist/smoke/ && hdiutil detach -quiet dist/smoke/mnt
 	scripts/smoke-test.sh dist/smoke/Highlighter.app
 

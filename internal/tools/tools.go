@@ -1,9 +1,9 @@
 // Package tools discovers the external binaries highlighter depends on.
 //
-// Release builds ship yt-dlp, ffmpeg and deno in a "tools" folder next to the
-// executable. A yt-dlp downloaded by UpdateYtDlp lives in the user's config
-// folder and wins over the bundled one; PATH is the last resort (Homebrew,
-// winget, development).
+// The desktop app ships yt-dlp, ffmpeg and deno next to the server binary
+// (Tauri sidecars) and the CA bundle in its resources folder. A yt-dlp
+// downloaded by UpdateYtDlp lives in the user's config folder and wins over
+// the bundled one; PATH is the last resort (Homebrew, development).
 package tools
 
 import (
@@ -40,12 +40,14 @@ type Locator struct {
 	Dirs    []string
 }
 
-// NewLocator searches userDir, then the "tools" folder next to the executable.
+// NewLocator searches userDir, then the executable's folder (desktop app
+// sidecars), then the macOS app's Resources folder.
 func NewLocator(userDir string) Locator {
 	l := Locator{UserDir: userDir, Dirs: []string{userDir}}
 	if exe, err := os.Executable(); err == nil {
 		if exe, err = filepath.EvalSymlinks(exe); err == nil {
-			l.Dirs = append(l.Dirs, filepath.Join(filepath.Dir(exe), "tools"))
+			dir := filepath.Dir(exe)
+			l.Dirs = append(l.Dirs, dir, filepath.Join(dir, "..", "Resources"))
 		}
 	}
 	return l

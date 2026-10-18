@@ -68,7 +68,7 @@ func TestIsHomebrew(t *testing.T) {
 	if !IsHomebrew("/opt/homebrew/bin/yt-dlp") {
 		t.Error("/opt/homebrew/bin/yt-dlp should be Homebrew")
 	}
-	if IsHomebrew("/Applications/Highlighter.app/Contents/MacOS/tools/yt-dlp") {
+	if IsHomebrew("/Applications/Highlighter.app/Contents/MacOS/yt-dlp") {
 		t.Error("bundled yt-dlp should not be Homebrew")
 	}
 }
