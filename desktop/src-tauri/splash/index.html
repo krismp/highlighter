@@ -18,6 +18,13 @@
       p { margin: 0; color: rgba(255, 255, 255, 0.7); }
       code { font-size: 13px; word-break: break-all; color: #fff; }
       .error .ball { animation: none; background: #8b2b08; }
+      #detail, #title { user-select: text; -webkit-user-select: text; }
+      button {
+        margin-top: 16px; padding: 8px 14px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.3);
+        background: transparent; color: #fff; font: inherit; cursor: pointer;
+      }
+      button:hover { background: rgba(255, 255, 255, 0.1); }
+      [hidden] { display: none; }
     </style>
   </head>
   <body>
@@ -25,6 +32,7 @@
       <div class="ball" aria-hidden="true"></div>
       <h1 id="title">Starting highlighter…</h1>
       <p id="detail">This takes a few seconds.</p>
+      <button id="copy" type="button" hidden>Copy details</button>
     </main>
     <script>
       // Called by the app when the local server cannot start.
@@ -36,6 +44,21 @@
         const code = document.createElement("code");
         code.textContent = logPath;
         detail.append(code);
+        const report = `Highlighter could not start: ${message}\nLog: ${logPath}\nTime: ${new Date().toISOString()}\nSystem: ${navigator.userAgent}`;
+        const copy = document.getElementById("copy");
+        copy.hidden = false;
+        copy.onclick = async () => {
+          try {
+            await navigator.clipboard.writeText(report);
+          } catch {
+            const area = Object.assign(document.createElement("textarea"), { value: report });
+            document.body.append(area);
+            area.select();
+            document.execCommand("copy");
+            area.remove();
+          }
+          copy.textContent = "Copied";
+        };
       };
     </script>
   </body>

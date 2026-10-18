@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/krismp/highlighter/internal/clip"
+	"github.com/krismp/highlighter/internal/desktop"
 )
 
 var ErrNotFound = errors.New("session not found")
@@ -135,6 +136,9 @@ func (s *Store) LoadSettings() (Settings, error) {
 		return s.defaults, fmt.Errorf("read settings: %w", err)
 	}
 	st.OutputRoot = cmp.Or(st.OutputRoot, s.defaults.OutputRoot)
+	if desktop.IsTemporary(st.OutputRoot) {
+		st.OutputRoot = s.defaults.OutputRoot // never somewhere the system empties
+	}
 	st.Concurrency = cmp.Or(st.Concurrency, s.defaults.Concurrency)
 	st.DefaultDuration = cmp.Or(st.DefaultDuration, s.defaults.DefaultDuration)
 	return st, nil

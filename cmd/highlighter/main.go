@@ -9,12 +9,15 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/krismp/highlighter/internal/desktop"
@@ -32,6 +35,7 @@ var version = "dev" // set by scripts/package.sh
 func main() {
 	port := flag.Int("port", 7777, "port to listen on (127.0.0.1 only)")
 	noOpen := flag.Bool("no-open", false, "do not open the browser on start")
+	exitWithStdin := flag.Bool("exit-with-stdin", false, "shut down when stdin closes (the desktop app holds it open while it runs)")
 	flag.Parse()
 
 	url := fmt.Sprintf("http://127.0.0.1:%d", *port)
@@ -73,25 +77,38 @@ func main() {
 	// Probing the tools takes seconds (yt-dlp is a self-extracting binary), so
 	// the status is measured once and again only after updating yt-dlp.
 	status.Encoder = string(encoder)
+	status.Version = version
 	health := &healthCache{status: status}
 	cutter := ffmpeg.Runner{Bin: cmp.Or(status.FFmpeg.Path, "ffmpeg"), CAFile: loc.File("cacert.pem")}
+	jobs := job.NewManager(resolver, cutter)
+	shutdown := shutdownOnce(jobs)
 	handler := server.New(server.Deps{
 		Store:       st,
-		Jobs:        job.NewManager(resolver, cutter),
+		Jobs:        jobs,
 		Resolver:    resolver,
 		Encoder:     encoder,
 		Health:      health.get,
 		UpdateYtDlp: health.afterUpdate(loc),
 		OpenPath:    desktop.Open,
 		RevealPath:  desktop.Reveal,
-		Quit: func() {
-			log.Println("quit requested from the app")
-			os.Exit(0)
-		},
-		NewID: newID,
-		UI:    ui.FS(),
-		Port:  *port,
+		Internet:    tools.CheckInternet,
+		Quit:        func() { shutdown("Quit clicked in the app") },
+		NewID:       newID,
+		UI:          ui.FS(),
+		Port:        *port,
 	})
+
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
+	go func() { shutdown("received " + (<-signals).String()) }()
+	if *exitWithStdin {
+		// The desktop app holds our stdin open; it closes when the app exits
+		// for any reason, crashes and force-quits included.
+		go func() {
+			io.Copy(io.Discard, os.Stdin)
+			shutdown("the desktop app closed")
+		}()
+	}
 
 	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", *port))
 	if err != nil {
@@ -102,6 +119,23 @@ func main() {
 		_ = desktop.Open(url)
 	}
 	log.Fatal(http.Serve(ln, handler))
+}
+
+// shutdownOnce returns the single way the server stops: cancel all clip work
+// (killing yt-dlp and ffmpeg with their children, removing partial files),
+// wait briefly for it, then exit. Later calls wait for the first to finish.
+func shutdownOnce(jobs *job.Manager) func(reason string) {
+	var once sync.Once
+	return func(reason string) {
+		once.Do(func() {
+			log.Printf("shutting down: %s", reason)
+			if !jobs.Shutdown(10 * time.Second) {
+				log.Println("some clip work did not stop within 10s; exiting anyway")
+			}
+			os.Exit(0)
+		})
+		select {} // another caller is exiting the process
+	}
 }
 
 type healthCache struct {
@@ -120,7 +154,7 @@ func (h *healthCache) afterUpdate(loc tools.Locator) func(context.Context) (stri
 		out, err := loc.UpdateYtDlp(ctx)
 		s := loc.Check(ctx)
 		h.mu.Lock()
-		s.Encoder = h.status.Encoder
+		s.Encoder, s.Version = h.status.Encoder, h.status.Version
 		h.status = s
 		h.mu.Unlock()
 		return out, err

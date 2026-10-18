@@ -1,8 +1,11 @@
 package desktop
 
-import "os/exec"
+import (
+	"os/exec"
+	"path/filepath"
+)
 
-const videosFolder = "Movies"
+func videosDir(home string) string { return filepath.Join(home, "Movies") }
 
 // Open opens a URL, folder or file with its default app.
 func Open(target string) error { return exec.Command("open", target).Run() }

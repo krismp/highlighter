@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -50,6 +51,7 @@ type env struct {
 	cfg      string
 	revealed *[]string // paths passed to RevealPath
 	quit     chan struct{}
+	internet *error // what the Internet check returns
 }
 
 func newEnv(t *testing.T) *env {
@@ -66,6 +68,7 @@ func newEnv(t *testing.T) *env {
 	n := 0
 	revealed := &[]string{}
 	quit := make(chan struct{}, 1)
+	internet := new(error)
 	h := New(Deps{
 		Store: st, Jobs: jobs, Resolver: res, Encoder: ffmpeg.X264,
 		Health:      func(context.Context) tools.Status { return tools.Status{Encoder: "libx264"} },
@@ -73,6 +76,7 @@ func newEnv(t *testing.T) *env {
 		OpenPath:    func(string) error { return nil },
 		RevealPath:  func(p string) error { *revealed = append(*revealed, p); return nil },
 		Quit:        func() { quit <- struct{}{} },
+		Internet:    func(context.Context) error { return *internet },
 		NewID:       func() string { n++; return fmt.Sprintf("c%d", n) },
 		UI: fstest.MapFS{
 			"index.html":    {Data: []byte("<html>app</html>")},
@@ -81,7 +85,7 @@ func newEnv(t *testing.T) *env {
 	})
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
-	return &env{srv: srv, resolver: res, jobs: jobs, out: out, cfg: filepath.Join(dir, "config"), revealed: revealed, quit: quit}
+	return &env{srv: srv, resolver: res, jobs: jobs, out: out, cfg: filepath.Join(dir, "config"), revealed: revealed, quit: quit, internet: internet}
 }
 
 func (e *env) do(t *testing.T, method, path string, body any) (int, []byte) {
@@ -417,6 +421,35 @@ func TestReelOnlyWithCustomName(t *testing.T) {
 	}
 }
 
+func TestConnectivity(t *testing.T) {
+	e := newEnv(t)
+	code, data := e.do(t, "GET", "/api/connectivity", nil)
+	if v := decode[map[string]any](t, data); code != 200 || v["online"] != true {
+		t.Fatalf("online: %d %s", code, data)
+	}
+	*e.internet = errors.New("cannot reach YouTube: no route to host")
+	code, data = e.do(t, "GET", "/api/connectivity", nil)
+	if v := decode[map[string]any](t, data); code != 200 || v["online"] != false || v["error"] != (*e.internet).Error() {
+		t.Fatalf("offline: %d %s", code, data)
+	}
+}
+
+func TestRunningJobsListsTitles(t *testing.T) {
+	e := newEnv(t)
+	code, data := e.do(t, "GET", "/api/jobs/running", nil)
+	if code != 200 || string(bytes.TrimSpace(data)) != `{"running":[]}` {
+		t.Fatalf("idle: %d %s", code, data)
+	}
+}
+
+func TestSettingsRejectTemporaryFolder(t *testing.T) {
+	e := newEnv(t)
+	code, data := e.do(t, "PUT", "/api/settings", map[string]any{"outputRoot": filepath.Join(os.TempDir(), "clips"), "concurrency": 2, "defaultDuration": 10})
+	if code != 400 || !strings.Contains(string(data), "temporary folder") {
+		t.Fatalf("temp folder: %d %s", code, data)
+	}
+}
+
 func TestPing(t *testing.T) {
 	e := newEnv(t)
 	code, data := e.do(t, "GET", "/api/ping", nil)
@@ -480,11 +513,13 @@ func TestDefaultDurationSetting(t *testing.T) {
 			t.Errorf("defaultDuration %v: %d; want 400", d, code)
 		}
 	}
-	code, data := e.do(t, "PUT", "/api/settings", map[string]any{"outputRoot": e.out, "concurrency": 2})
+	home, _ := os.UserHomeDir()
+	root := filepath.Join(home, "highlighter-test-clips") // never written: these steps cut nothing
+	code, data := e.do(t, "PUT", "/api/settings", map[string]any{"outputRoot": root, "concurrency": 2})
 	if got := decode[store.Settings](t, data); code != 200 || got.DefaultDuration != 10 {
 		t.Errorf("missing defaultDuration should save as 10: %d %+v", code, got)
 	}
-	if code, _ := e.do(t, "PUT", "/api/settings", map[string]any{"outputRoot": e.out, "concurrency": 2, "defaultDuration": 7.5}); code != 200 {
+	if code, _ := e.do(t, "PUT", "/api/settings", map[string]any{"outputRoot": root, "concurrency": 2, "defaultDuration": 7.5}); code != 200 {
 		t.Fatalf("save 7.5: %d", code)
 	}
 	e.open(t)

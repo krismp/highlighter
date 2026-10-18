@@ -75,12 +75,20 @@ func TestSettingsDefaultsAndSave(t *testing.T) {
 	if err != nil || got != want {
 		t.Fatalf("defaults = %+v, %v; want %+v", got, err, want)
 	}
-	if err := s.SaveSettings(Settings{OutputRoot: "/tmp/x", Concurrency: 5}); err != nil {
+	clips := filepath.Join("/Users/me", "Desktop", "clips")
+	if err := s.SaveSettings(Settings{OutputRoot: clips, Concurrency: 5}); err != nil {
 		t.Fatal(err)
 	}
 	got, _ = s.LoadSettings()
-	if got.OutputRoot != "/tmp/x" || got.Concurrency != 5 {
+	if got.OutputRoot != clips || got.Concurrency != 5 {
 		t.Fatalf("after save = %+v", got)
+	}
+	// A temporary folder saved by an older version falls back to the default.
+	if err := s.SaveSettings(Settings{OutputRoot: filepath.Join(os.TempDir(), "x"), Concurrency: 5}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ = s.LoadSettings(); got.OutputRoot != want.OutputRoot {
+		t.Fatalf("temp folder kept: %+v", got)
 	}
 }
 

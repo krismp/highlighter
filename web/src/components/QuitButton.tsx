@@ -12,7 +12,7 @@ const headerButton = "text-white/70 hover:bg-white/10 hover:text-white";
  */
 export function QuitButton() {
   const [asking, setAsking] = useState(false);
-  const quit = useMutation({ mutationFn: api.quit });
+  const quit = useMutation({ meta: { errorTitle: "Couldn't quit" }, mutationFn: api.quit });
   if (quit.isSuccess) {
     return (
       <div className="fixed inset-0 z-50 grid place-items-center bg-background p-6 text-center text-foreground">
@@ -25,15 +25,15 @@ export function QuitButton() {
   }
   if (!asking) {
     return (
-      <Button size="sm" variant="ghost" className={`ml-auto ${headerButton}`} title="Stop highlighter" onClick={() => setAsking(true)}>
+      <Button size="sm" variant="ghost" className={headerButton} title="Stop highlighter" onClick={() => setAsking(true)}>
         <Power className="size-3.5" /> Quit
       </Button>
     );
   }
   return (
-    <div className="ml-auto flex items-center gap-1 text-sm">
+    <div className="flex items-center gap-1 text-sm">
       <span className="hidden text-white/70 sm:inline">
-        {quit.error ? quit.error.message : "Quit? Clips still being cut will stop."}
+        Quit? Clips still being cut will stop.
       </span>
       <Button size="sm" variant="ghost" className={headerButton} disabled={quit.isPending} onClick={() => quit.mutate()}>
         Quit

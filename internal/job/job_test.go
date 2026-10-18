@@ -370,3 +370,35 @@ func TestDoneClipsCarryDurationAndSize(t *testing.T) {
 		t.Errorf("empty ReelFile should default to %s, got %s", ConcatFile, v.Concat.File)
 	}
 }
+
+// untilCancelled is a cut that only ends when its context does, like a long ffmpeg run.
+type untilCancelled struct{ fakeCutter }
+
+func (u *untilCancelled) Cut(ctx context.Context, spec ffmpeg.CutSpec, onProgress func(float64)) error {
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+func TestShutdownStopsRunningWork(t *testing.T) {
+	m := NewManager(&fakeResolver{}, &untilCancelled{})
+	m.Backoff = []time.Duration{time.Hour} // a pending retry must not delay shutdown
+	if _, err := m.Start(request(2, ModeBoth)); err != nil {
+		t.Fatal(err)
+	}
+	if got := m.Running(); len(got) != 1 || got[0] != "abc" {
+		t.Fatalf("Running = %v; want [abc]", got)
+	}
+	if !m.Shutdown(2 * time.Second) {
+		t.Fatal("Shutdown timed out with work still running")
+	}
+	v, _ := m.View("abc")
+	if v.Running || v.Clips[0].Status != Failed || v.Clips[1].Status != Failed {
+		t.Fatalf("after shutdown: %+v", v)
+	}
+	if got := m.Running(); len(got) != 0 {
+		t.Fatalf("Running after shutdown = %v", got)
+	}
+	if _, err := m.Start(request(1, ModeClips)); !errors.Is(err, ErrShuttingDown) {
+		t.Fatalf("Start after shutdown: err = %v; want ErrShuttingDown", err)
+	}
+}

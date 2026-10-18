@@ -8,6 +8,7 @@ export function AddClips({ videoId, onAdded }: { videoId: string; onAdded: (s: S
   const [text, setText] = useState("");
   const [errors, setErrors] = useState<LineError[]>([]);
   const add = useMutation({
+    meta: { errorTitle: "Couldn't add the clips" },
     scope: { id: `session-${videoId}` },
     mutationFn: () => api.parseClips(videoId, text),
     onSuccess: (r) => {
@@ -29,7 +30,6 @@ export function AddClips({ videoId, onAdded }: { videoId: string; onAdded: (s: S
       {errors.map((e) => (
         <p key={e.line} className="text-xs text-destructive">Line {e.line}: {e.err}</p>
       ))}
-      {add.error && <p className="text-xs text-destructive">{add.error.message}</p>}
     </div>
   );
 }

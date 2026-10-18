@@ -9,7 +9,8 @@ export interface SessionView {
 export type ClipInput = Omit<Clip, "id"> & { id?: string };
 export interface RecentSession { videoId: string; title: string; clipCount: number; updatedAt: string }
 export interface ToolStatus { found: boolean; path: string; version: string }
-export interface Health { ytDlp: ToolStatus; ffmpeg: ToolStatus; deno: ToolStatus; encoder: string; os: string }
+export interface Health { ytDlp: ToolStatus; ffmpeg: ToolStatus; deno: ToolStatus; encoder: string; os: string; version: string }
+export interface Connectivity { online: boolean; error: string }
 export interface Settings { outputRoot: string; concurrency: number; defaultDuration: number }
 export interface LineError { line: number; text: string; err: string }
 export type JobStatus = "queued" | "processing" | "done" | "failed";
@@ -22,22 +23,40 @@ export interface JobView {
 }
 
 export class ApiError extends Error {
-  status: number;
-  constructor(status: number, message: string) {
+  status: number;  // 0 when the server could not be reached at all
+  request: string; // "POST /api/sessions → 500", for error reports
+  constructor(status: number, message: string, request: string) {
     super(message);
     this.status = status;
+    this.request = request;
   }
 }
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const res = await fetch(`/api${path}`, {
-    method,
-    headers: method === "GET" ? undefined : { "Content-Type": "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
+  const where = `${method} /api${path}`;
+  let res: Response;
+  try {
+    res = await fetch(`/api${path}`, {
+      method,
+      headers: method === "GET" ? undefined : { "Content-Type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  } catch (err) {
+    throw new ApiError(0, "Can't reach highlighter's local server. If the app was closed or crashed, open it again.",
+      `${where} → no response (${err instanceof Error ? err.message : String(err)})`);
+  }
+  const request = `${where} → ${res.status} ${res.statusText}`;
   const text = await res.text();
-  const data = text ? JSON.parse(text) : undefined;
-  if (!res.ok) throw new ApiError(res.status, data?.error ?? res.statusText);
+  let data: unknown;
+  try {
+    data = text ? JSON.parse(text) : undefined;
+  } catch {
+    throw new ApiError(res.status, `The server sent an unexpected response (HTTP ${res.status}).`, `${request}\n${text.slice(0, 500)}`);
+  }
+  if (!res.ok) {
+    const message = (data as { error?: string } | undefined)?.error ?? `Request failed (HTTP ${res.status} ${res.statusText}).`;
+    throw new ApiError(res.status, message, request);
+  }
   return data as T;
 }
 
@@ -46,6 +65,7 @@ export const toInputs = (clips: ClipView[]): ClipInput[] =>
 
 export const api = {
   health: () => request<Health>("GET", "/health"),
+  connectivity: () => request<Connectivity>("GET", "/connectivity"),
   updateYtDlp: () => request<{ output: string }>("POST", "/tools/update-ytdlp"),
   quit: () => request<void>("POST", "/quit"),
   settings: () => request<Settings>("GET", "/settings"),

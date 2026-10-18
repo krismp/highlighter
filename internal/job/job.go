@@ -119,16 +119,71 @@ type Manager struct {
 
 	subsMu sync.Mutex
 	subs   map[string]map[chan View]struct{}
+
+	// ctx is cancelled by Shutdown, which stops every yt-dlp and ffmpeg run;
+	// workers counts the goroutines doing that work.
+	ctx     context.Context
+	stop    context.CancelFunc
+	workers sync.WaitGroup
 }
 
 func NewManager(r Resolver, c Cutter) *Manager {
+	ctx, stop := context.WithCancel(context.Background())
 	return &Manager{
 		Backoff:  []time.Duration{2 * time.Second, 5 * time.Second},
 		resolver: r,
 		cutter:   c,
 		jobs:     map[string]*job{},
 		subs:     map[string]map[chan View]struct{}{},
+		ctx:      ctx,
+		stop:     stop,
 	}
+}
+
+// ErrShuttingDown is returned by Start and Retry once Shutdown has begun.
+var ErrShuttingDown = errors.New("highlighter is shutting down")
+
+// Running lists the sessions with clips still queued or being cut.
+func (m *Manager) Running() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var ids []string
+	for id, j := range m.jobs {
+		j.mu.Lock()
+		if j.viewLocked().Running {
+			ids = append(ids, id)
+		}
+		j.mu.Unlock()
+	}
+	slices.Sort(ids)
+	return ids
+}
+
+// Shutdown stops all work (killing yt-dlp and ffmpeg with their child
+// processes) and waits up to timeout for it to wind down. Unfinished clips
+// leave no partial files behind.
+func (m *Manager) Shutdown(timeout time.Duration) bool {
+	m.stop()
+	done := make(chan struct{})
+	go func() {
+		m.workers.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return true
+	case <-time.After(timeout):
+		return false
+	}
+}
+
+// spawn runs fn as tracked work, so Shutdown can wait for it.
+func (m *Manager) spawn(fn func()) {
+	m.workers.Add(1)
+	go func() {
+		defer m.workers.Done()
+		fn()
+	}()
 }
 
 type job struct {
@@ -168,6 +223,9 @@ func (m *Manager) Start(req Request) (View, error) {
 			return View{}, err
 		}
 	}
+	if m.ctx.Err() != nil {
+		return View{}, ErrShuttingDown
+	}
 	m.mu.Lock()
 	if old, ok := m.jobs[req.SessionID]; ok {
 		old.mu.Lock()
@@ -193,12 +251,15 @@ func (m *Manager) Start(req Request) (View, error) {
 
 	v := m.update(j, func() {})
 	for i := range req.Tasks {
-		go m.runClip(j, i, false)
+		m.spawn(func() { m.runClip(j, i, false) })
 	}
 	return v, nil
 }
 
 func (m *Manager) Retry(sessionID, clipID string) (View, error) {
+	if m.ctx.Err() != nil {
+		return View{}, ErrShuttingDown
+	}
 	m.mu.Lock()
 	// Hold m.mu across the state change so Start cannot replace the job
 	// between lookup and update (which would bypass ErrBusy).
@@ -219,7 +280,7 @@ func (m *Manager) Retry(sessionID, clipID string) (View, error) {
 		if !retryable {
 			return v, ErrNotRetryable
 		}
-		go m.runConcat(j)
+		m.spawn(func() { m.runConcat(j) })
 		return v, nil
 	}
 	idx, retryable := -1, false
@@ -243,7 +304,7 @@ func (m *Manager) Retry(sessionID, clipID string) (View, error) {
 	if !retryable {
 		return v, ErrNotRetryable
 	}
-	go m.runClip(j, idx, true)
+	m.spawn(func() { m.runClip(j, idx, true) })
 	return v, nil
 }
 
@@ -325,7 +386,14 @@ func (m *Manager) runClip(j *job, i int, refreshFirst bool) {
 	var err error
 	for attempt := 0; attempt <= len(m.Backoff); attempt++ {
 		if attempt > 0 {
-			time.Sleep(m.Backoff[attempt-1])
+			select {
+			case <-time.After(m.Backoff[attempt-1]):
+			case <-m.ctx.Done():
+			}
+		}
+		if m.ctx.Err() != nil {
+			err = ErrShuttingDown
+			break
 		}
 		m.update(j, func() {
 			c := &j.clips[i]
@@ -365,7 +433,7 @@ func allDone(clips []ClipState) bool {
 }
 
 func (m *Manager) cutOnce(j *job, i int, refresh bool) error {
-	ctx := context.Background()
+	ctx := m.ctx
 	info, err := m.streams(ctx, j, refresh)
 	if err != nil {
 		return err
@@ -403,7 +471,7 @@ func (m *Manager) runConcat(j *job) {
 		inputs[i] = j.clipPath(i)
 	}
 	output := filepath.Join(j.req.OutputDir, j.req.ReelFile)
-	err := m.cutter.Concat(context.Background(), inputs, output)
+	err := m.cutter.Concat(m.ctx, inputs, output)
 	if err == nil && j.req.Mode == ModeReel {
 		// The parts only existed to build the reel. Kept on failure so a retry can reuse them.
 		os.RemoveAll(filepath.Join(j.req.OutputDir, PartsDir))

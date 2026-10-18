@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/krismp/highlighter/internal/proc"
 	"io"
 	"net/http"
 	"os"
@@ -31,7 +32,8 @@ type Status struct {
 	FFmpeg  ToolStatus `json:"ffmpeg"`
 	Deno    ToolStatus `json:"deno"`
 	Encoder string     `json:"encoder"`
-	OS      string     `json:"os"` // runtime.GOOS, so the UI can name the file manager
+	OS      string     `json:"os"`      // runtime.GOOS, so the UI can name the file manager
+	Version string     `json:"version"` // highlighter's own version, for error reports
 }
 
 // Locator finds tools in Dirs (in order), then on PATH.
@@ -96,7 +98,7 @@ func probe(ctx context.Context, path string, versionArgs ...string) ToolStatus {
 	if path == "" {
 		return ToolStatus{}
 	}
-	out, _ := exec.CommandContext(ctx, path, versionArgs...).Output()
+	out, _ := proc.Command(ctx, path, versionArgs...).Output()
 	return ToolStatus{Found: true, Path: path, Version: FirstLine(string(out))}
 }
 
@@ -140,7 +142,7 @@ func ReleaseAsset(goos, goarch string) (string, error) {
 func (l Locator) UpdateYtDlp(ctx context.Context) (string, error) {
 	current := l.Find("yt-dlp")
 	if IsHomebrew(current) {
-		out, err := exec.CommandContext(ctx, "brew", "upgrade", "yt-dlp").CombinedOutput()
+		out, err := proc.Command(ctx, "brew", "upgrade", "yt-dlp").CombinedOutput()
 		return string(out), err
 	}
 	latest, err := latestTag(ctx)
@@ -221,4 +223,28 @@ func download(ctx context.Context, url, dest string) error {
 		return err
 	}
 	return os.Rename(tmp, dest)
+}
+
+// InternetProbe is fetched to decide whether YouTube is reachable; Google
+// serves an empty 204 there for exactly this purpose.
+const InternetProbe = "https://www.youtube.com/generate_204"
+
+// CheckInternet reports whether YouTube can be reached from this machine,
+// which is what yt-dlp and ffmpeg need.
+func CheckInternet(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, 6*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, InternetProbe, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("cannot reach YouTube: %w", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("cannot reach YouTube: %s", resp.Status)
+	}
+	return nil
 }

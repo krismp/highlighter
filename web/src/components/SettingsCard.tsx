@@ -8,7 +8,7 @@ import { api } from "@/lib/api";
 
 export function SettingsCard() {
   const qc = useQueryClient();
-  const settings = useQuery({ queryKey: ["settings"], queryFn: api.settings });
+  const settings = useQuery({ queryKey: ["settings"], queryFn: api.settings, meta: { errorTitle: "Couldn't load settings" } });
   const [outputRoot, setOutputRoot] = useState("");
   const [concurrency, setConcurrency] = useState("3");
   const [defaultDuration, setDefaultDuration] = useState("10");
@@ -19,6 +19,7 @@ export function SettingsCard() {
     setDefaultDuration(String(settings.data.defaultDuration));
   }, [settings.data]);
   const save = useMutation({
+    meta: { errorTitle: "Couldn't save settings" },
     mutationFn: () => api.saveSettings({ outputRoot, concurrency: Number(concurrency), defaultDuration: Number(defaultDuration) }),
     onSuccess: (s) => qc.setQueryData(["settings"], s),
   });
@@ -41,7 +42,6 @@ export function SettingsCard() {
           </div>
           <Button type="submit" disabled={save.isPending}>Save</Button>
         </form>
-        {save.error && <p className="mt-2 text-sm text-destructive">{save.error.message}</p>}
         {save.isSuccess && <p className="mt-2 text-sm text-muted-foreground">Saved.</p>}
       </CardContent>
     </Card>

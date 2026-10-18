@@ -2,10 +2,36 @@ package desktop
 
 import (
 	"os/exec"
+	"path/filepath"
 	"syscall"
+	"unsafe"
 )
 
-const videosFolder = "Videos"
+var (
+	shell32                  = syscall.NewLazyDLL("shell32.dll")
+	ole32                    = syscall.NewLazyDLL("ole32.dll")
+	procSHGetKnownFolderPath = shell32.NewProc("SHGetKnownFolderPath")
+	procCoTaskMemFree        = ole32.NewProc("CoTaskMemFree")
+	// FOLDERID_Videos {18989B1D-99B5-455B-841C-AB7C74E4DDFC}
+	folderIDVideos = syscall.GUID{Data1: 0x18989B1D, Data2: 0x99B5, Data3: 0x455B,
+		Data4: [8]byte{0x84, 0x1C, 0xAB, 0x7C, 0x74, 0xE4, 0xDD, 0xFC}}
+)
+
+// videosDir asks Windows for the Videos known folder, which users can move
+// (OneDrive, another drive) and whose name is localized.
+func videosDir(home string) string {
+	var p *uint16
+	r, _, _ := procSHGetKnownFolderPath.Call(uintptr(unsafe.Pointer(&folderIDVideos)), 0, 0, uintptr(unsafe.Pointer(&p)))
+	if r != 0 || p == nil {
+		return filepath.Join(home, "Videos")
+	}
+	defer procCoTaskMemFree.Call(uintptr(unsafe.Pointer(p)))
+	var path []uint16
+	for ptr := unsafe.Pointer(p); *(*uint16)(ptr) != 0; ptr = unsafe.Add(ptr, 2) {
+		path = append(path, *(*uint16)(ptr))
+	}
+	return syscall.UTF16ToString(path)
+}
 
 // Open opens a URL, folder or file with its default app.
 func Open(target string) error {

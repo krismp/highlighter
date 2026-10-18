@@ -59,10 +59,24 @@ Clips are saved to `Videos\Highlights` (changeable in Settings). The app uses
 the Microsoft Edge WebView2 runtime, which Windows 10 and 11 already include;
 on systems without it the installer downloads it.
 
+### Good to know
+
+- **Internet:** opening, previewing and cutting YouTube videos needs an
+  internet connection. When you're offline, highlighter says so at the top of
+  the page and checks again automatically; your saved clips are unaffected.
+- **Quitting:** closing the window, **Cmd+Q** (macOS) or **Quit** in the page
+  stops highlighter completely; nothing keeps running in the background. If a
+  video is still being processed, highlighter asks before quitting.
+  Finished clips stay saved; unfinished ones are not saved.
+- **Errors:** anything that goes wrong shows up as an alert in the corner of
+  the window. **Copy details** copies everything needed for a bug report.
+- **Clips folder:** clips go to `Movies/Highlights` on macOS and
+  `Videos\Highlights` on Windows. Change it in **Settings**.
+
 ### Updating yt-dlp
 
 YouTube changes often break older yt-dlp versions. If videos stop loading,
-click **Update yt-dlp** on the home page: it downloads the latest yt-dlp into
+click **Update yt-dlp** in **Settings**: it downloads the latest yt-dlp into
 your profile (`~/.config/highlighter/bin`) and uses it from then on, no new
 highlighter download needed.
 

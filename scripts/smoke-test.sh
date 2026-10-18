@@ -5,8 +5,9 @@
 #
 # Strict checks: the app starts its server, finds yt-dlp/ffmpeg/deno inside
 # itself, a second launch exits and leaves one instance, ffmpeg fetches over
-# HTTPS with the bundled CA file and encodes, deno runs, and Quit in the UI
-# closes the app. Then it clips a real YouTube video; set YOUTUBE_OPTIONAL=1 to
+# HTTPS with the bundled CA file and encodes, deno runs, Quit in the UI
+# closes the app, and when the app is killed outright its server still stops
+# (nothing is left running in the background). Then it clips a real YouTube video; set YOUTUBE_OPTIONAL=1 to
 # only warn when that fails (YouTube often blocks CI runners' datacenter IPs).
 set -uo pipefail
 
@@ -106,4 +107,21 @@ for _ in $(seq 1 15); do alive $pid || break; sleep 1; done
 alive $pid && fail "the app kept running after Quit"
 curl -sf --max-time 2 "$api/ping" >/dev/null && fail "the server kept running after Quit"
 echo "ok: Quit closed the app and its server"
+
+server_running() {
+  if [[ $ext == .exe ]]; then
+    tasklist //FI "IMAGENAME eq highlighter-server.exe" 2>/dev/null | grep -qi highlighter-server
+  else
+    pgrep -f "$tools/highlighter-server" >/dev/null
+  fi
+}
+"$main" > "$home/app2.log" 2>&1 &
+pid=$!
+for _ in $(seq 1 120); do curl -sf "$api/ping" >/dev/null && break; sleep 1; done
+curl -sf "$api/ping" >/dev/null || fail "the app did not start again"
+kill -9 "$pid"
+for _ in $(seq 1 15); do server_running || break; sleep 1; done
+server_running && fail "the server kept running after the app was killed"
+curl -sf --max-time 2 "$api/ping" >/dev/null && fail "the server still answers after the app was killed"
+echo "ok: killing the app also stops its server"
 echo "PASS"

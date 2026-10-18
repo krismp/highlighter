@@ -1,13 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "@tanstack/react-router";
-import { Plus } from "lucide-react";
+import { Plus, RotateCw, WifiOff } from "lucide-react";
 import { useEffect, useState } from "react";
 import { AddClips } from "@/components/AddClips";
 import { ClipRow } from "@/components/ClipRow";
+import { ErrorPanel } from "@/components/ErrorPanel";
 import { JobResults, ProcessPanel } from "@/components/ProcessPanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useConnectivity } from "@/hooks/useConnectivity";
 import { useJob } from "@/hooks/useJob";
 import { useYouTubePlayer } from "@/hooks/useYouTubePlayer";
 import { api, toInputs, type ClipInput, type SessionView } from "@/lib/api";
@@ -26,12 +28,14 @@ function Session({ videoId }: { videoId: string }) {
   // ends until "Edit these clips".
   const [resultsOpen, setResultsOpen] = useState(false);
   const showResults = job !== null && (resultsOpen || job.running);
-  const session = useQuery({ queryKey: ["session", videoId], queryFn: () => api.session(videoId) });
+  const session = useQuery({ queryKey: ["session", videoId], queryFn: () => api.session(videoId), meta: { inline: true } });
   const player = useYouTubePlayer(videoId, session.data !== undefined);
+  const net = useConnectivity();
   const setSession = (v: SessionView) => qc.setQueryData(["session", videoId], v);
   // Writes run one at a time (scope) and each body is built from the latest cached
   // session when it runs, so queued edits never overwrite one another.
   const save = useMutation({
+    meta: { errorTitle: "Couldn't save your clips" },
     scope: { id: `session-${videoId}` },
     mutationFn: (build: (s: SessionView) => { leadIn: number; clips: ClipInput[] }) => {
       const latest = qc.getQueryData<SessionView>(["session", videoId]);
@@ -40,13 +44,14 @@ function Session({ videoId }: { videoId: string }) {
     },
     onSuccess: setSession,
   });
-  const settings = useQuery({ queryKey: ["settings"], queryFn: api.settings });
+  const settings = useQuery({ queryKey: ["settings"], queryFn: api.settings, meta: { errorTitle: "Couldn't load settings" } });
   const defaultLength = settings.data?.defaultDuration ?? 10;
   const [lengthInput, setLengthInput] = useState("");
   useEffect(() => {
     if (settings.data) setLengthInput(String(settings.data.defaultDuration));
   }, [settings.data?.defaultDuration]);
   const saveDefault = useMutation({
+    meta: { errorTitle: "Couldn't save the clip length" },
     mutationFn: (defaultDuration: number) => api.saveSettings({ ...settings.data!, defaultDuration }),
     onSuccess: (st) => qc.setQueryData(["settings"], st),
   });
@@ -62,7 +67,7 @@ function Session({ videoId }: { videoId: string }) {
     if (playing) extend(playing.id, playing.effStart, playing.effDuration);
   }, [playing?.id, playing?.effStart, playing?.effDuration, extend]);
 
-  if (session.error) return <p className="text-destructive">{session.error.message}</p>;
+  if (session.error) return <ErrorPanel title="Couldn't load this video's clips" error={session.error} onRetry={() => session.refetch()} />;
   const s = session.data;
   if (!s) return <p className="text-muted-foreground">Loading…</p>;
 
@@ -98,7 +103,18 @@ function Session({ videoId }: { videoId: string }) {
         </div>
 
         <div className="overflow-hidden rounded-lg bg-board shadow-lg">
-          <div ref={player.containerRef} className="aspect-video w-full bg-black [&_iframe]:h-full [&_iframe]:w-full" />
+          <div className="relative">
+            <div ref={player.containerRef} className="aspect-video w-full bg-black [&_iframe]:h-full [&_iframe]:w-full" />
+            {(player.error || net.online === false) && !player.ready && (
+              <div className="absolute inset-0 grid place-items-center bg-board p-6 text-center text-white">
+                <div className="grid max-w-sm justify-items-center gap-3">
+                  <WifiOff className="size-8 text-white/60" aria-hidden />
+                  <p className="text-sm">{net.online === false ? "The video preview needs an internet connection." : player.error}</p>
+                  <Button size="sm" variant="secondary" onClick={player.retry}><RotateCw className="size-3.5" /> Try again</Button>
+                </div>
+              </div>
+            )}
+          </div>
           <div className="flex flex-wrap items-center gap-3 px-3 py-2.5 text-white">
             <span className="score led w-20 text-3xl font-bold" aria-label="Current video time">{clock(player.playhead)}</span>
             <p className="min-w-40 flex-1 text-sm text-white/70">Pause where a play starts, then add it as a clip.</p>
@@ -125,8 +141,6 @@ function Session({ videoId }: { videoId: string }) {
             <span className="text-sm text-muted-foreground">seconds added before every clip. Changing it clears approvals.</span>
           </div>
         </div>}
-        {save.error && <p className="text-sm text-destructive">{save.error.message}</p>}
-        {saveDefault.error && <p className="text-sm text-destructive">{saveDefault.error.message}</p>}
       </section>
 
       {showResults ? (

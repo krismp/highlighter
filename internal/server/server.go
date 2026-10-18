@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/krismp/highlighter/internal/clip"
+	"github.com/krismp/highlighter/internal/desktop"
 	"github.com/krismp/highlighter/internal/ffmpeg"
 	"github.com/krismp/highlighter/internal/job"
 	"github.com/krismp/highlighter/internal/store"
@@ -35,8 +36,9 @@ type Deps struct {
 	Health      func(context.Context) tools.Status
 	UpdateYtDlp func(context.Context) (string, error)
 	OpenPath    func(string) error
-	RevealPath  func(string) error // show a file selected in Finder / File Explorer
-	Quit        func()             // stop the server; called after the response is sent
+	RevealPath  func(string) error          // show a file selected in Finder / File Explorer
+	Quit        func()                      // stop the server; called after the response is sent
+	Internet    func(context.Context) error // nil when YouTube is reachable
 	NewID       func() string
 	UI          fs.FS
 	Port        int // listen port; 0 accepts any port (tests)
@@ -49,6 +51,8 @@ func New(d Deps) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/ping", s.ping)
 	mux.HandleFunc("GET /api/health", s.health)
+	mux.HandleFunc("GET /api/connectivity", s.connectivity)
+	mux.HandleFunc("GET /api/jobs/running", s.runningJobs)
 	mux.HandleFunc("POST /api/tools/update-ytdlp", s.updateYtDlp)
 	mux.HandleFunc("POST /api/quit", s.quit)
 	mux.HandleFunc("GET /api/settings", s.getSettings)
@@ -92,6 +96,11 @@ func allowedHost(hostport string, port int) bool {
 		return false
 	}
 	return port == 0 || p == strconv.Itoa(port)
+}
+
+func homeDir() string {
+	home, _ := os.UserHomeDir()
+	return home
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -158,6 +167,38 @@ func (s *server) ping(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]string{"app": "highlighter"})
 }
 
+// runningJobs lists the videos still being processed, so the desktop app can
+// warn before it closes and stops them.
+func (s *server) runningJobs(w http.ResponseWriter, r *http.Request) {
+	type entry struct {
+		SessionID string `json:"sessionId"`
+		Title     string `json:"title"`
+	}
+	out := []entry{}
+	for _, id := range s.Jobs.Running() {
+		e := entry{SessionID: id, Title: id}
+		if sess, err := s.Store.LoadSession(id); err == nil && sess.Title != "" {
+			e.Title = sess.Title
+		}
+		out = append(out, e)
+	}
+	writeJSON(w, 200, map[string]any{"running": out})
+}
+
+// connectivity tells the UI whether the internet (YouTube) is reachable, so it
+// can explain an offline state instead of failing on every action.
+func (s *server) connectivity(w http.ResponseWriter, r *http.Request) {
+	if s.Internet == nil {
+		writeJSON(w, 200, map[string]any{"online": true, "error": ""})
+		return
+	}
+	if err := s.Internet(r.Context()); err != nil {
+		writeJSON(w, 200, map[string]any{"online": false, "error": err.Error()})
+		return
+	}
+	writeJSON(w, 200, map[string]any{"online": true, "error": ""})
+}
+
 func (s *server) health(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, s.Health(r.Context()))
 }
@@ -198,11 +239,14 @@ func (s *server) putSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if rest, ok := strings.CutPrefix(st.OutputRoot, "~/"); ok {
-		home, _ := os.UserHomeDir()
-		st.OutputRoot = filepath.Join(home, rest)
+		st.OutputRoot = filepath.Join(homeDir(), rest)
 	}
 	if !filepath.IsAbs(st.OutputRoot) {
 		writeError(w, 400, "output folder must be an absolute path")
+		return
+	}
+	if desktop.IsTemporary(st.OutputRoot) {
+		writeError(w, 400, "That is a temporary folder: the system empties it and it is hard to find. Choose a folder such as "+filepath.Join(desktop.VideosDir(homeDir()), "Highlights")+".")
 		return
 	}
 	if st.Concurrency < 1 || st.Concurrency > 8 {

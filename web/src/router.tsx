@@ -1,7 +1,10 @@
 import { createRootRoute, createRoute, createRouter, Link, Outlet } from "@tanstack/react-router";
+import { OfflineBanner } from "@/components/OfflineBanner";
 import { QuitButton } from "@/components/QuitButton";
 import { HomePage } from "@/routes/HomePage";
 import { SessionPage } from "@/routes/SessionPage";
+import { SettingsPage } from "@/routes/SettingsPage";
+import { Settings } from "lucide-react";
 
 const rootRoute = createRootRoute({
   component: () => (
@@ -13,10 +16,14 @@ const rootRoute = createRootRoute({
             <span className="font-heading text-xl font-bold">highlighter</span>
           </Link>
           <span className="hidden text-sm text-white/60 sm:inline">Cut every play out of a match</span>
+          <Link to="/settings" className="ml-auto flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm text-white/70 hover:bg-white/10 hover:text-white [&.active]:text-white" title="Settings">
+            <Settings className="size-3.5" /> Settings
+          </Link>
           <QuitButton />
         </div>
         <div className="h-1 bg-court" aria-hidden />
       </header>
+      <OfflineBanner />
       <main className="mx-auto max-w-6xl px-4 py-8">
         <Outlet />
       </main>
@@ -25,9 +32,10 @@ const rootRoute = createRootRoute({
 });
 
 const indexRoute = createRoute({ getParentRoute: () => rootRoute, path: "/", component: HomePage });
+const settingsRoute = createRoute({ getParentRoute: () => rootRoute, path: "/settings", component: SettingsPage });
 const sessionRoute = createRoute({ getParentRoute: () => rootRoute, path: "/s/$videoId", component: SessionPage });
 
-export const router = createRouter({ routeTree: rootRoute.addChildren([indexRoute, sessionRoute]) });
+export const router = createRouter({ routeTree: rootRoute.addChildren([indexRoute, settingsRoute, sessionRoute]) });
 
 declare module "@tanstack/react-router" {
   interface Register {
