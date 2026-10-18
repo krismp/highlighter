@@ -1,23 +1,28 @@
 #!/usr/bin/env bash
-# Builds a self-contained, ready-to-install highlighter for one platform:
+# Builds the Highlighter desktop app (Tauri) installer for one platform:
 #
-#   scripts/package.sh macos-arm64   [version]  -> dist/Highlighter-<version>-macos-apple-silicon.dmg
-#   scripts/package.sh macos-amd64   [version]  -> dist/Highlighter-<version>-macos-intel.dmg
+#   scripts/package.sh macos-arm64   [version]  -> dist/Highlighter-<version>-macos-apple-silicon.zip
+#   scripts/package.sh macos-amd64   [version]  -> dist/Highlighter-<version>-macos-intel.zip
 #   scripts/package.sh windows-amd64 [version]  -> dist/Highlighter-<version>-windows-x64.zip
 #
-# The package bundles yt-dlp, ffmpeg and deno (yt-dlp's JavaScript runtime for
-# YouTube), so users install nothing else. Downloads are checksum-verified and
-# cached in dist/cache. macOS targets must be built on a Mac (codesign, hdiutil).
+# Each zip holds the installer (a .dmg, or a -setup.exe) and INSTALL.txt.
+# The app bundles the highlighter server and yt-dlp, ffmpeg and deno (yt-dlp's
+# JavaScript runtime for YouTube) as Tauri sidecars, so users install nothing
+# else. Downloads are checksum-verified and cached in dist/cache. Build macOS
+# targets on a Mac and the Windows target on Windows (Tauri does not
+# cross-compile installers). version must be semver (from a v* tag); without
+# it the version in desktop/src-tauri/tauri.conf.json is used.
 # Set SKIP_WEB=1 to reuse an existing web build.
 set -euo pipefail
 
 target=${1:?usage: scripts/package.sh <macos-arm64|macos-amd64|windows-amd64> [version]}
-version=${2:-$(git describe --tags --always --dirty 2>/dev/null || echo dev)}
+version=${2:-}
 version=${version#v}
 
 root=$(cd "$(dirname "$0")/.." && pwd)
 dist="$root/dist"
 cache="$dist/cache"
+tauri="$root/desktop/src-tauri"
 mkdir -p "$cache"
 
 # Pinned versions (yt-dlp is always the latest). The ffmpeg hashes come from
@@ -32,22 +37,24 @@ FFMPEG_WIN_SHA=60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba
 
 case "$target" in
   macos-arm64)
-    goos=darwin goarch=arm64 label=macos-apple-silicon
+    goos=darwin goarch=arm64 label=macos-apple-silicon triple=aarch64-apple-darwin bundle=dmg
     ytdlp_asset=yt-dlp_macos deno_asset=deno-aarch64-apple-darwin.zip
     ffmpeg_url=$FFMPEG_MAC_ARM64_URL ffmpeg_sha=$FFMPEG_MAC_ARM64_SHA ;;
   macos-amd64)
-    goos=darwin goarch=amd64 label=macos-intel
+    goos=darwin goarch=amd64 label=macos-intel triple=x86_64-apple-darwin bundle=dmg
     ytdlp_asset=yt-dlp_macos deno_asset=deno-x86_64-apple-darwin.zip
     ffmpeg_url=$FFMPEG_MAC_AMD64_URL ffmpeg_sha=$FFMPEG_MAC_AMD64_SHA ;;
   windows-amd64)
-    goos=windows goarch=amd64 label=windows-x64
+    goos=windows goarch=amd64 label=windows-x64 triple=x86_64-pc-windows-msvc bundle=nsis
     ytdlp_asset=yt-dlp.exe deno_asset=deno-x86_64-pc-windows-msvc.zip
     ffmpeg_url=$FFMPEG_WIN_URL ffmpeg_sha=$FFMPEG_WIN_SHA ;;
   *) echo "unknown target: $target" >&2; exit 2 ;;
 esac
 exe=""; [[ $goos == windows ]] && exe=.exe
 
-sha256() { shasum -a 256 "$1" | cut -d' ' -f1; }
+sha256() {
+  if command -v shasum >/dev/null; then shasum -a 256 "$1"; else sha256sum "$1"; fi | cut -d' ' -f1
+}
 
 # fetch URL DEST SHA256: download once into the cache and verify.
 fetch() {
@@ -103,50 +110,49 @@ fi
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 
-if [[ $goos == darwin ]]; then
-  stage="$work/stage"
-  app="$stage/Highlighter.app"
-  bindir="$app/Contents/MacOS"
-else
-  stage="$work/Highlighter"
-  bindir="$stage"
-fi
-mkdir -p "$bindir/tools"
+# Tauri sidecars are named <name>-<target triple>; the bundler strips the
+# suffix and places them next to the app's executable.
+bins="$tauri/binaries"
+rm -rf "$bins" && mkdir -p "$bins" "$tauri/resources"
 
-echo "building highlighter $version for $goos/$goarch"
+echo "building highlighter-server for $goos/$goarch"
 (cd "$root" && CGO_ENABLED=0 GOOS=$goos GOARCH=$goarch go build -trimpath \
-  -ldflags "-s -w -X main.version=$version" -o "$bindir/Highlighter$exe" ./cmd/highlighter)
+  -ldflags "-s -w -X main.version=${version:-dev}" -o "$bins/highlighter-server-$triple$exe" ./cmd/highlighter)
 
-cp "$tools_cache/$ytdlp_tag-$ytdlp_asset" "$bindir/tools/yt-dlp$exe"
+cp "$tools_cache/$ytdlp_tag-$ytdlp_asset" "$bins/yt-dlp-$triple$exe"
 unzip -q -o "$tools_cache/$DENO_VERSION-$deno_asset" -d "$work/deno"
-cp "$work/deno/deno$exe" "$bindir/tools/deno$exe"
+cp "$work/deno/deno$exe" "$bins/deno-$triple$exe"
 unzip -q -o "$tools_cache/ffmpeg-$ffmpeg_sha.zip" -d "$work/ffmpeg"
-cp "$(find "$work/ffmpeg" -type f -name "ffmpeg$exe" | head -1)" "$bindir/tools/ffmpeg$exe"
-chmod +x "$bindir"/Highlighter$exe "$bindir"/tools/*
-cp "$cache/cacert.pem" "$bindir/tools/cacert.pem"
+cp "$(find "$work/ffmpeg" -type f -name "ffmpeg$exe" | head -1)" "$bins/ffmpeg-$triple$exe"
+chmod +x "$bins"/*
+cp "$cache/cacert.pem" "$tauri/resources/cacert.pem"
 
-notices="$root/packaging/THIRD_PARTY_NOTICES.txt"
-mkdir -p "$dist"
+pnpm --dir "$root/desktop" install --frozen-lockfile
+rustup target add "$triple" >/dev/null 2>&1 || true
+args=(build --target "$triple" --bundles "$bundle")
+[[ -n $version ]] && args+=(--config "{\"version\":\"$version\"}")
+# CI=true skips the Finder AppleScript that styles the .dmg window, which
+# would otherwise open Finder and ask for automation permission.
+CI=true pnpm --dir "$root/desktop" tauri "${args[@]}"
 
-if [[ $goos == darwin ]]; then
-  sed "s/@VERSION@/$version/g" "$root/packaging/macos/Info.plist" > "$app/Contents/Info.plist"
-  mkdir -p "$app/Contents/Resources"
-  cp "$notices" "$app/Contents/Resources/"
-  # Ad-hoc signature: not notarized, but keeps Gatekeeper's "Open Anyway"
-  # path available instead of reporting the app as damaged.
-  codesign --force --deep --sign - "$app"
-  codesign --verify --deep --strict "$app"
-  ln -s /Applications "$stage/Applications"
-  cp "$root/packaging/macos/How to install.txt" "$stage/"
-  out="$dist/Highlighter-$version-$label.dmg"
-  rm -f "$out"
-  hdiutil create -quiet -volname "Highlighter" -srcfolder "$stage" -fs HFS+ -format UDZO -ov "$out"
+out_dir="$tauri/target/$triple/release/bundle/$bundle"
+name="Highlighter-${version:-$(git -C "$root" describe --tags --always --dirty 2>/dev/null || echo dev)}-$label"
+pkg="$work/$name"
+mkdir -p "$pkg" "$dist"
+if [[ $bundle == dmg ]]; then
+  # Recompress with LZMA (macOS 10.15+): about 17% smaller than Tauri's zlib .dmg.
+  hdiutil convert -quiet "$(ls -t "$out_dir"/*.dmg | head -1)" -format ULMO -o "$pkg/$name.dmg"
+  cp "$root/packaging/macos/INSTALL.txt" "$pkg/"
 else
-  cp "$root/packaging/windows/README.txt" "$stage/README.txt"
-  cp "$notices" "$stage/"
-  out="$dist/Highlighter-$version-$label.zip"
-  rm -f "$out"
-  (cd "$work" && zip -q -r -9 "$out" Highlighter)
+  cp "$(ls -t "$out_dir"/*-setup.exe | head -1)" "$pkg/$name-setup.exe"
+  cp "$root/packaging/windows/INSTALL.txt" "$pkg/"
+fi
+out="$dist/$name.zip"
+rm -f "$out"
+if command -v zip >/dev/null; then
+  (cd "$work" && zip -q -r -9 "$out" "$name")
+else # Git Bash on Windows has no zip; GitHub's Windows runners have 7-Zip
+  (cd "$work" && 7z a -tzip -mx=9 "$(cygpath -w "$out")" "$name" >/dev/null)
 fi
 
 echo "built $out ($(du -h "$out" | cut -f1)) with yt-dlp $ytdlp_tag, deno $DENO_VERSION, ffmpeg 9.0.2"

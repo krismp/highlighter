@@ -1,0 +1,23 @@
+HIGHLIGHTER FOR WINDOWS
+=======================
+
+1. Double-click the setup file in this zip
+   (Highlighter-...-windows-x64-setup.exe).
+
+   If Windows shows "Windows protected your PC", the installer is not
+   signed: click "More info", then "Run anyway".
+
+2. Follow the installer. It installs for your user account only, so it
+   does not need administrator rights, and adds Highlighter to the Start
+   menu.
+
+3. Start Highlighter from the Start menu. It opens in its own window;
+   close the window (or click "Quit" at the top right) to stop it.
+
+Everything Highlighter needs (yt-dlp, ffmpeg, deno) is included. Nothing
+else to install. Windows 10 and 11 already have the Microsoft Edge WebView2
+runtime the app uses; on older systems the installer downloads it.
+
+Clips are saved to Videos\Highlights (changeable in Settings).
+
+To uninstall: Settings > Apps > Installed apps > Highlighter > Uninstall.

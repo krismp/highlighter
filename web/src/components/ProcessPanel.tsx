@@ -5,8 +5,10 @@ import { OpenVideoForm } from "@/components/OpenVideoForm";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useConnectivity } from "@/hooks/useConnectivity";
 import { useFileManager } from "@/hooks/useFileManager";
 import { api, type JobStatus, type JobView, type OutputMode, type SessionView } from "@/lib/api";
+import { reportError } from "@/lib/errors";
 import { bytes, length } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -22,7 +24,9 @@ export function ProcessPanel({ session, busy, onStarted }: { session: SessionVie
   const qc = useQueryClient();
   const [mode, setMode] = useState<OutputMode>("clips");
   const [reelName, setReelName] = useState(session.reelName);
+  const net = useConnectivity();
   const process = useMutation({
+    meta: { errorTitle: "Couldn't start processing" },
     mutationFn: () => api.process(id, mode, reelName),
     onSuccess: (v: JobView) => {
       qc.setQueryData(["job", id], v);
@@ -34,7 +38,8 @@ export function ProcessPanel({ session, busy, onStarted }: { session: SessionVie
   const unapproved = session.clips.filter((c) => !c.approved).length;
   const errors = session.issues.filter((i) => i.severity === "error").length;
   const reason =
-    n === 0 ? "Add at least one clip."
+    net.online === false ? "Cutting clips needs an internet connection."
+    : n === 0 ? "Add at least one clip."
     : errors > 0 ? `Fix ${errors} error${errors > 1 ? "s" : ""} first.`
     : unapproved > 0 ? `Approve ${unapproved} more clip${unapproved > 1 ? "s" : ""} to continue.`
     : null;
@@ -75,12 +80,11 @@ export function ProcessPanel({ session, busy, onStarted }: { session: SessionVie
       )}
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
-        <Button size="lg" disabled={!session.canProcess || busy || process.isPending} onClick={() => process.mutate()}>
+        <Button size="lg" disabled={!session.canProcess || busy || process.isPending || net.online === false} onClick={() => process.mutate()}>
           {busy ? "Processing…" : action}
         </Button>
         {reason && <p className="text-sm text-muted-foreground">{reason}</p>}
       </div>
-      {process.error && <p className="mt-2 text-sm text-destructive">{process.error.message}</p>}
     </section>
   );
 }
@@ -125,9 +129,10 @@ export function JobResults({ session, job, onEdit }: { session: SessionView; job
   const id = session.videoId;
   const qc = useQueryClient();
   const setJob = (v: JobView) => qc.setQueryData(["job", id], v);
-  const retry = useMutation({ mutationFn: (clipId: string) => api.retry(id, clipId), onSuccess: setJob });
-  const openFolder = useMutation({ mutationFn: () => api.openFolder(id) });
-  const reveal = useMutation({ mutationFn: (file: string) => api.reveal(id, file) });
+  const retry = useMutation({ meta: { errorTitle: "Couldn't retry" }, mutationFn: (clipId: string) => api.retry(id, clipId), onSuccess: setJob });
+  const openFolder = useMutation({ meta: { errorTitle: "Couldn't open the folder" }, mutationFn: () => api.openFolder(id) });
+  const reveal = useMutation({ meta: { errorTitle: "Couldn't show the file" }, mutationFn: (file: string) => api.reveal(id, file) });
+  const playbackFailed = (file: string) => reportError("Couldn't play a saved file", `${file} could not be played here. It is still saved in ${job.outputDir}.`);
 
   const partsOnly = job.mode === "reel";
   const steps = job.clips.length + (job.concat.requested ? 1 : 0);
@@ -172,7 +177,6 @@ export function JobResults({ session, job, onEdit }: { session: SessionView; job
             </Button>
           )}
         </div>
-        {[retry.error, openFolder.error, reveal.error].map((e, i) => e && <p key={i} className="mt-2 text-sm text-destructive">{e.message}</p>)}
       </div>
 
       {finished && (
@@ -202,7 +206,7 @@ export function JobResults({ session, job, onEdit }: { session: SessionView; job
             </div>
             {job.concat.status === "queued" && finished && <p className="text-xs text-muted-foreground">Waiting for failed clips to be retried.</p>}
             {job.concat.status === "failed" && <p className="text-xs text-destructive">{job.concat.error}</p>}
-            {job.concat.status === "done" && <video className="w-full rounded-md" src={api.fileUrl(id, job.concat.file)} controls preload="metadata" />}
+            {job.concat.status === "done" && <video className="w-full rounded-md" src={api.fileUrl(id, job.concat.file)} controls preload="metadata" onError={() => playbackFailed(job.concat.file)} />}
           </li>
         )}
 
@@ -232,7 +236,7 @@ export function JobResults({ session, job, onEdit }: { session: SessionView; job
               </div>
             )}
             {c.status === "failed" && <p className="text-xs text-destructive">{c.error}</p>}
-            {c.status === "done" && !partsOnly && <video className="w-full rounded-md" src={api.fileUrl(id, c.file)} controls preload="metadata" />}
+            {c.status === "done" && !partsOnly && <video className="w-full rounded-md" src={api.fileUrl(id, c.file)} controls preload="metadata" onError={() => playbackFailed(c.file)} />}
           </li>
         ))}
       </ul>

@@ -119,7 +119,7 @@ func TestRunsAllClips(t *testing.T) {
 	}
 	slices.SortFunc(c.cuts, func(a, b ffmpeg.CutSpec) int { return int(a.Start - b.Start) })
 	got := c.cuts[1]
-	if got.Start != 10 || got.Duration != 10 || got.Output != "/out/b.mp4" || got.Encoder != ffmpeg.X264 ||
+	if got.Start != 10 || got.Duration != 10 || got.Output != filepath.FromSlash("/out/b.mp4") || got.Encoder != ffmpeg.X264 ||
 		got.Video.URL != "https://v" || got.Audio.URL != "https://a" {
 		t.Errorf("cut spec %+v", got)
 	}
@@ -206,6 +206,9 @@ func TestConcatAfterAllDoneInOrder(t *testing.T) {
 	m.Start(request(3, ModeBoth))
 	v := waitFor(t, m, func(v View) bool { return v.Concat.Status == Done })
 	want := []string{"/out/highlights_full.mp4", "/out/a.mp4", "/out/b.mp4", "/out/c.mp4"}
+	for i := range want {
+		want[i] = filepath.FromSlash(want[i])
+	}
 	if len(c.concats) != 1 || !slices.Equal(c.concats[0], want) {
 		t.Errorf("concats = %v; want [%v]", c.concats, want)
 	}
@@ -368,5 +371,37 @@ func TestDoneClipsCarryDurationAndSize(t *testing.T) {
 	}
 	if v.Concat.File != ConcatFile {
 		t.Errorf("empty ReelFile should default to %s, got %s", ConcatFile, v.Concat.File)
+	}
+}
+
+// untilCancelled is a cut that only ends when its context does, like a long ffmpeg run.
+type untilCancelled struct{ fakeCutter }
+
+func (u *untilCancelled) Cut(ctx context.Context, spec ffmpeg.CutSpec, onProgress func(float64)) error {
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+func TestShutdownStopsRunningWork(t *testing.T) {
+	m := NewManager(&fakeResolver{}, &untilCancelled{})
+	m.Backoff = []time.Duration{time.Hour} // a pending retry must not delay shutdown
+	if _, err := m.Start(request(2, ModeBoth)); err != nil {
+		t.Fatal(err)
+	}
+	if got := m.Running(); len(got) != 1 || got[0] != "abc" {
+		t.Fatalf("Running = %v; want [abc]", got)
+	}
+	if !m.Shutdown(2 * time.Second) {
+		t.Fatal("Shutdown timed out with work still running")
+	}
+	v, _ := m.View("abc")
+	if v.Running || v.Clips[0].Status != Failed || v.Clips[1].Status != Failed {
+		t.Fatalf("after shutdown: %+v", v)
+	}
+	if got := m.Running(); len(got) != 0 {
+		t.Fatalf("Running after shutdown = %v", got)
+	}
+	if _, err := m.Start(request(1, ModeClips)); !errors.Is(err, ErrShuttingDown) {
+		t.Fatalf("Start after shutdown: err = %v; want ErrShuttingDown", err)
 	}
 }

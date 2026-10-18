@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Highlighter</title>
+    <style>
+      :root { color-scheme: light; }
+      body {
+        margin: 0; min-height: 100vh; display: grid; place-items: center;
+        background: #0f1a30; color: #fff;
+        font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      }
+      main { text-align: center; padding: 24px; max-width: 520px; }
+      .ball { width: 72px; height: 72px; border-radius: 50%; background: #ea5b0c; margin: 0 auto 20px; animation: bounce 0.9s ease-in-out infinite alternate; }
+      @keyframes bounce { to { transform: translateY(-14px); } }
+      h1 { font-size: 22px; margin: 0 0 6px; }
+      p { margin: 0; color: rgba(255, 255, 255, 0.7); }
+      code { font-size: 13px; word-break: break-all; color: #fff; }
+      .error .ball { animation: none; background: #8b2b08; }
+      #detail, #title { user-select: text; -webkit-user-select: text; }
+      button {
+        margin-top: 16px; padding: 8px 14px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.3);
+        background: transparent; color: #fff; font: inherit; cursor: pointer;
+      }
+      button:hover { background: rgba(255, 255, 255, 0.1); }
+      [hidden] { display: none; }
+    </style>
+  </head>
+  <body>
+    <main id="main">
+      <div class="ball" aria-hidden="true"></div>
+      <h1 id="title">Starting highlighter…</h1>
+      <p id="detail">This takes a few seconds.</p>
+      <button id="copy" type="button" hidden>Copy details</button>
+    </main>
+    <script>
+      // Called by the app when the local server cannot start.
+      window.showError = (message, logPath) => {
+        document.getElementById("main").className = "error";
+        document.getElementById("title").textContent = "Highlighter could not start";
+        const detail = document.getElementById("detail");
+        detail.textContent = message + " Details are in ";
+        const code = document.createElement("code");
+        code.textContent = logPath;
+        detail.append(code);
+        const report = `Highlighter could not start: ${message}\nLog: ${logPath}\nTime: ${new Date().toISOString()}\nSystem: ${navigator.userAgent}`;
+        const copy = document.getElementById("copy");
+        copy.hidden = false;
+        copy.onclick = async () => {
+          try {
+            await navigator.clipboard.writeText(report);
+          } catch {
+            const area = Object.assign(document.createElement("textarea"), { value: report });
+            document.body.append(area);
+            area.select();
+            document.execCommand("copy");
+            area.remove();
+          }
+          copy.textContent = "Copied";
+        };
+      };
+    </script>
+  </body>
+</html>

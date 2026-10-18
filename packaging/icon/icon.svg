@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- highlighter app icon: the header's basketball badge on the scoreboard navy.
+       Body follows Apple's 824px icon grid inside a 1024 canvas. -->
+  <defs>
+    <clipPath id="body"><rect x="100" y="100" width="824" height="824" rx="185"/></clipPath>
+    <radialGradient id="shine" cx="40%" cy="35%" r="70%">
+      <stop offset="0" stop-color="#ff7a2e"/>
+      <stop offset="1" stop-color="#d14e06"/>
+    </radialGradient>
+  </defs>
+  <g clip-path="url(#body)">
+    <rect x="100" y="100" width="824" height="824" fill="#0f1a30"/>
+    <rect x="100" y="842" width="824" height="82" fill="#ea5b0c"/>
+  </g>
+  <g transform="translate(512 470)">
+    <circle r="270" fill="url(#shine)"/>
+    <g fill="none" stroke="#0f1a30" stroke-width="20" stroke-linecap="round">
+      <circle r="270"/>
+      <line x1="0" y1="-270" x2="0" y2="270"/>
+      <line x1="-270" y1="0" x2="270" y2="0"/>
+      <path d="M -191 -191 Q -60 0 -191 191"/>
+      <path d="M 191 -191 Q 60 0 191 191"/>
+    </g>
+  </g>
+</svg>

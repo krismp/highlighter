@@ -7,8 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/krismp/highlighter/internal/proc"
 	"net/url"
-	"os/exec"
 	"regexp"
 	"strings"
 	"time"
@@ -142,7 +142,7 @@ func (c Client) Resolve(ctx context.Context, url string) (Info, error) {
 	if c.Locate != nil {
 		bin = c.Locate()
 	}
-	cmd := exec.CommandContext(ctx, bin, c.Args(url)...)
+	cmd := proc.Command(ctx, bin, c.Args(url)...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()

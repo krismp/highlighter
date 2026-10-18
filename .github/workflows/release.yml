@@ -1,7 +1,8 @@
-# Builds self-contained installers for macOS (Apple Silicon, Intel) and
-# Windows, smoke-tests each on its own kind of machine, and on a v* tag
-# publishes them as a GitHub release. Branch pushes that touch packaging (and
-# manual runs) build and test only; the installers are kept as artifacts.
+# Builds the Highlighter desktop app (Tauri) for macOS (Apple Silicon,
+# Intel) and Windows, installs and smoke-tests each on its own kind of
+# machine, and on a v* tag publishes the zipped installers as a GitHub
+# release. Branch pushes that touch the app (and manual runs) build and test
+# only; the zips are kept as workflow artifacts.
 name: release
 
 on:
@@ -12,10 +13,10 @@ on:
       - .github/workflows/release.yml
       - scripts/**
       - packaging/**
+      - desktop/**
       - cmd/**
-      - internal/tools/**
-      - internal/desktop/**
-      - internal/ffmpeg/**
+      - internal/**
+      - web/**
   workflow_dispatch:
 
 permissions:
@@ -23,12 +24,20 @@ permissions:
 
 jobs:
   build:
-    # All targets build on macOS: the .dmg needs codesign and hdiutil, and Go
-    # cross-compiles the Windows binary.
-    runs-on: macos-15
     strategy:
+      fail-fast: false
       matrix:
-        target: [macos-arm64, macos-amd64, windows-amd64]
+        include:
+          - target: macos-arm64
+            runner: macos-15
+          - target: macos-amd64
+            runner: macos-15
+          - target: windows-amd64
+            runner: windows-latest
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
         with:
@@ -36,18 +45,24 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+          cache: false # no go.sum: the server has no dependencies
       - uses: pnpm/action-setup@v4
         with:
           version: 12.5.1
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri
+          key: ${{ matrix.target }}
       - run: go test ./...
       - run: scripts/package.sh ${{ matrix.target }} ${{ github.ref_type == 'tag' && github.ref_name || '' }}
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.target }}
-          path: dist/Highlighter-*
+          path: dist/Highlighter-*.zip
           if-no-files-found: error
           compression-level: 0
 
@@ -75,18 +90,24 @@ jobs:
         with:
           name: ${{ matrix.target }}
           path: dist
-      - name: Install from the .dmg
+      - run: unzip -q dist/*.zip -d "$RUNNER_TEMP/pkg" && ls -R "$RUNNER_TEMP/pkg"
+      - name: Install from the .dmg and test
         if: runner.os == 'macOS'
         run: |
-          hdiutil attach -nobrowse -mountpoint /tmp/hl dist/*.dmg
+          hdiutil attach -nobrowse -mountpoint /tmp/hl "$RUNNER_TEMP"/pkg/*/*.dmg
           cp -R /tmp/hl/Highlighter.app "$RUNNER_TEMP/"
           hdiutil detach /tmp/hl
           scripts/smoke-test.sh "$RUNNER_TEMP/Highlighter.app"
-      - name: Install from the .zip
+      - name: Run the installer silently
         if: runner.os == 'Windows'
+        shell: pwsh
         run: |
-          unzip -q dist/*.zip -d "$RUNNER_TEMP/win"
-          scripts/smoke-test.sh "$RUNNER_TEMP/win/Highlighter/Highlighter.exe"
+          $setup = Get-ChildItem "$env:RUNNER_TEMP\pkg\*\*-setup.exe" | Select-Object -First 1
+          Start-Process -Wait -FilePath $setup.FullName -ArgumentList '/S', "/D=$env:RUNNER_TEMP\installed"
+          Get-ChildItem "$env:RUNNER_TEMP\installed"
+      - name: Test the installed app
+        if: runner.os == 'Windows'
+        run: scripts/smoke-test.sh "$RUNNER_TEMP/installed"
 
   release:
     if: github.ref_type == 'tag'
@@ -106,10 +127,10 @@ jobs:
         run: |
           tag=$GITHUB_REF_NAME
           if gh release view "$tag" >/dev/null 2>&1; then
-            gh release upload "$tag" dist/Highlighter-* --clobber
+            gh release upload "$tag" dist/Highlighter-*.zip --clobber
             if [[ -z $(gh release view "$tag" --json body -q .body) ]]; then
               gh release edit "$tag" --notes-file packaging/RELEASE_NOTES.md
             fi
           else
-            gh release create "$tag" dist/Highlighter-* --verify-tag --title "Highlighter $tag" --notes-file packaging/RELEASE_NOTES.md
+            gh release create "$tag" dist/Highlighter-*.zip --verify-tag --title "Highlighter $tag" --notes-file packaging/RELEASE_NOTES.md
           fi

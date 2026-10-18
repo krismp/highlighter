@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { reportError } from "@/lib/errors";
 
 declare global {
   interface Window {
@@ -10,7 +11,7 @@ let apiReady: Promise<void> | null = null;
 
 function loadIframeApi(): Promise<void> {
   if (typeof YT !== "undefined" && YT.Player) return Promise.resolve();
-  apiReady ??= new Promise((resolve) => {
+  apiReady ??= new Promise((resolve, reject) => {
     const previous = window.onYouTubeIframeAPIReady;
     window.onYouTubeIframeAPIReady = () => {
       previous?.();
@@ -18,9 +19,27 @@ function loadIframeApi(): Promise<void> {
     };
     const script = document.createElement("script");
     script.src = "https://www.youtube.com/iframe_api";
+    script.onerror = () => {
+      apiReady = null; // let a retry load it again
+      script.remove();
+      reject(new Error("The YouTube player could not be loaded. Check your internet connection, then try again."));
+    };
     document.head.appendChild(script);
   });
   return apiReady;
+}
+
+/** YouTube player error codes, in words. */
+function playerErrorMessage(code: number): string {
+  switch (code) {
+    case 2: return "YouTube rejected the video ID.";
+    case 5: return "This video can't be played in the embedded player.";
+    case 100: return "This video was removed or is private.";
+    case 101:
+    case 150:
+    case 153: return "The video's owner doesn't allow it to be played outside YouTube. You can still cut clips from it.";
+    default: return `The YouTube player reported error ${code}.`;
+  }
 }
 
 interface Range {
@@ -43,6 +62,8 @@ export function useYouTubePlayer(videoId: string, enabled: boolean) {
   const [ready, setReady] = useState(false);
   const [previewing, setPreviewing] = useState<string | null>(null);
   const [playhead, setPlayhead] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0); // bumped by retry() to rebuild the player
 
   const stop = useCallback((pause: boolean) => {
     activeRef.current = false;
@@ -54,6 +75,7 @@ export function useYouTubePlayer(videoId: string, enabled: boolean) {
     if (!enabled) return;
     let cancelled = false;
     let timer: number | undefined;
+    setError(null);
     loadIframeApi().then(() => {
       if (cancelled || !containerRef.current) return;
       const mount = document.createElement("div");
@@ -63,7 +85,15 @@ export function useYouTubePlayer(videoId: string, enabled: boolean) {
         width: "100%",
         height: "100%",
         playerVars: { rel: 0, playsinline: 1 },
-        events: { onReady: () => !cancelled && setReady(true) },
+        events: {
+          onReady: () => !cancelled && setReady(true),
+          onError: (e: YT.OnErrorEvent) => {
+            if (cancelled) return;
+            const message = playerErrorMessage(e.data);
+            setError(message);
+            reportError("The video preview stopped", message, `YouTube player error ${e.data} for video ${videoId}`);
+          },
+        },
       });
       playerRef.current = player;
       timer = window.setInterval(() => {
@@ -79,6 +109,10 @@ export function useYouTubePlayer(videoId: string, enabled: boolean) {
           setPreviewing(null);
         }
       }, 100);
+    }, (err: unknown) => {
+      if (cancelled) return;
+      setError(err instanceof Error ? err.message : String(err));
+      reportError("Couldn't load the video preview", err);
     });
     return () => {
       cancelled = true;
@@ -91,7 +125,7 @@ export function useYouTubePlayer(videoId: string, enabled: boolean) {
       setReady(false);
       setPreviewing(null);
     };
-  }, [videoId, enabled]);
+  }, [videoId, enabled, attempt]);
 
   const preview = useCallback((id: string, start: number, duration: number) => {
     const player = playerRef.current;
@@ -117,5 +151,7 @@ export function useYouTubePlayer(videoId: string, enabled: boolean) {
   const currentTime = useCallback(() => playerRef.current?.getCurrentTime() ?? 0, []);
   const range = previewing ? rangeRef.current : null;
 
-  return { containerRef, ready, previewing, playhead, range, preview, extend, stopPreview, currentTime };
+  const retry = useCallback(() => setAttempt((n) => n + 1), []);
+
+  return { containerRef, ready, error, retry, previewing, playhead, range, preview, extend, stopPreview, currentTime };
 }

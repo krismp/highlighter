@@ -1,51 +1,64 @@
 #!/usr/bin/env bash
-# Checks an unpacked release build using only its bundled tools:
+# Checks an installed desktop app using only what it bundles:
 #
-#   scripts/smoke-test.sh <path to Highlighter.app or Highlighter.exe> [port]
+#   scripts/smoke-test.sh <Highlighter.app | folder containing Highlighter.exe> [port]
 #
-# Strict checks: the server starts (the macOS app via its background
-# launcher), finds yt-dlp/ffmpeg/deno next to itself, a second launch finds
-# the running server, and Quit stops it. Then it clips a real YouTube video;
-# set YOUTUBE_OPTIONAL=1 to only warn when that fails (YouTube often blocks
-# CI runners' datacenter IPs).
+# Strict checks: the app starts its server, finds yt-dlp/ffmpeg/deno inside
+# itself, a second launch exits and leaves one instance, ffmpeg fetches over
+# HTTPS with the bundled CA file and encodes, deno runs, Quit in the UI
+# closes the app, and when the app is killed outright its server still stops
+# (nothing is left running in the background). Then it clips a real YouTube video; set YOUTUBE_OPTIONAL=1 to
+# only warn when that fails (YouTube often blocks CI runners' datacenter IPs).
 set -uo pipefail
 
-app=${1:?usage: scripts/smoke-test.sh <Highlighter.app|Highlighter.exe> [port]}
+app=${1:?usage: scripts/smoke-test.sh <Highlighter.app|install folder> [port]}
 port=${2:-7790}
 case "$app" in
-  *.app) exe="$app/Contents/MacOS/Highlighter" ;;
-  *) exe="$app" ;;
+  *.app)
+    main="$app/Contents/MacOS/Highlighter"
+    tools="$app/Contents/MacOS" ext="" cacert="$app/Contents/Resources/cacert.pem" ;;
+  *)
+    main="$app/Highlighter.exe"
+    tools="$app" ext=.exe cacert="$app/cacert.pem" ;;
 esac
+[[ -x $main ]] || { echo "FAIL: no app executable at $main"; exit 1; }
 
 home=$(mktemp -d)
-export HOME="$home" USERPROFILE="$home"     # keep settings and clips out of the real profile
+export HOME="$home" USERPROFILE="$home"   # keep settings and clips out of the real profile
+export HIGHLIGHTER_PORT=$port
 [[ $(uname) == Darwin ]] && export PATH=/usr/bin:/bin   # no Homebrew yt-dlp or ffmpeg
 py=$(command -v python3 || command -v python)
-tools_dir=$(cd "$(dirname "$exe")" && pwd)/tools
-command -v cygpath >/dev/null && tools_dir=$(cygpath -w "$tools_dir")   # Git Bash on Windows
+tools_native=$(cd "$tools" && pwd)
+command -v cygpath >/dev/null && tools_native=$(cygpath -w "$tools_native")   # Git Bash on Windows
 api=http://127.0.0.1:$port/api
 json='Content-Type: application/json'
 
-fail() { echo "FAIL: $*"; curl -s -XPOST -H "$json" "$api/quit" >/dev/null 2>&1; cat "$home/Library/Logs/Highlighter.log" 2>/dev/null; exit 1; }
+logs() {
+  cat "$home/Library/Logs/com.github.krismp.highlighter/server.log" 2>/dev/null
+  [[ -n ${LOCALAPPDATA:-} ]] && cat "$LOCALAPPDATA/com.github.krismp.highlighter/logs/server.log" 2>/dev/null
+}
+fail() { echo "FAIL: $*"; logs; curl -s -XPOST -H "$json" "$api/quit" >/dev/null 2>&1; kill "$pid" 2>/dev/null; exit 1; }
 field() { "$py" -c "import json,sys; d=json.load(sys.stdin); print($1)"; }
+alive() { kill -0 "$1" 2>/dev/null; }
 
-if [[ $app == *.app ]]; then
-  "$exe" -no-open -port "$port" || fail "launcher exited with $?"
-else
-  "$exe" -no-open -port "$port" > "$home/server.log" 2>&1 &
-fi
-for _ in $(seq 1 120); do curl -sf "$api/ping" >/dev/null && break; sleep 1; done
-curl -sf "$api/ping" >/dev/null || { cat "$home/server.log" 2>/dev/null; fail "server did not start"; }
-echo "ok: server started"
+"$main" > "$home/app.log" 2>&1 &
+pid=$!
+for _ in $(seq 1 120); do curl -sf "$api/ping" >/dev/null && break; alive $pid || break; sleep 1; done
+curl -sf "$api/ping" >/dev/null || { cat "$home/app.log"; fail "the app did not start its server"; }
+echo "ok: app started its server"
 
-"$exe" -no-open -port "$port" 2>&1 | grep -q "already running" || fail "second launch did not find the running server"
-echo "ok: second launch reuses the running server"
+"$main" > "$home/second.log" 2>&1 &
+second=$!
+for _ in $(seq 1 20); do alive $second || break; sleep 1; done
+alive $second && fail "a second launch kept running instead of handing over to the first"
+alive $pid && curl -sf "$api/ping" >/dev/null || fail "the first instance stopped after a second launch"
+echo "ok: second launch hands over to the running app"
 
 health=$(curl -sf "$api/health") || fail "health"
 for tool in ytDlp ffmpeg deno; do
   path=$(echo "$health" | field "d['$tool']['path'] if d['$tool']['found'] else ''")
   [[ -n $path ]] || fail "$tool not found"
-  [[ $path == "$tools_dir"* ]] || fail "$tool is not the bundled one: $path (want under $tools_dir)"
+  [[ $path == "$tools_native"* ]] || fail "$tool is not the bundled one: $path (want under $tools_native)"
   echo "ok: $tool $(echo "$health" | field "d['$tool']['version']")"
 done
 encoder=$(echo "$health" | field "d['encoder']")
@@ -54,9 +67,7 @@ echo "ok: encoder $encoder"
 # The clip pipeline without YouTube: HTTPS through the bundled CA file (static
 # ffmpeg builds cannot read the OS trust store), an encode with the chosen
 # encoder, and the JavaScript runtime yt-dlp uses for YouTube.
-tools=$(dirname "$exe")/tools
-ext=""; [[ -f $tools/ffmpeg.exe ]] && ext=.exe
-"$tools/ffmpeg$ext" -hide_banner -loglevel error -ca_file "$tools/cacert.pem" -f data \
+"$tools/ffmpeg$ext" -hide_banner -loglevel error -ca_file "$cacert" -f data \
   -i https://raw.githubusercontent.com/krismp/highlighter/main/README.md -map 0 -c copy -f data - >/dev/null \
   || fail "ffmpeg could not fetch over HTTPS with the bundled CA file"
 echo "ok: ffmpeg HTTPS with certificate verification"
@@ -92,7 +103,25 @@ else
 fi
 
 curl -sf -XPOST -H "$json" "$api/quit" >/dev/null || fail "quit request"
-sleep 2
-curl -sf --max-time 2 "$api/ping" >/dev/null && fail "server still running after Quit"
-echo "ok: Quit stopped the server"
+for _ in $(seq 1 15); do alive $pid || break; sleep 1; done
+alive $pid && fail "the app kept running after Quit"
+curl -sf --max-time 2 "$api/ping" >/dev/null && fail "the server kept running after Quit"
+echo "ok: Quit closed the app and its server"
+
+server_running() {
+  if [[ $ext == .exe ]]; then
+    tasklist //FI "IMAGENAME eq highlighter-server.exe" 2>/dev/null | grep -qi highlighter-server
+  else
+    pgrep -f "$tools/highlighter-server" >/dev/null
+  fi
+}
+"$main" > "$home/app2.log" 2>&1 &
+pid=$!
+for _ in $(seq 1 120); do curl -sf "$api/ping" >/dev/null && break; sleep 1; done
+curl -sf "$api/ping" >/dev/null || fail "the app did not start again"
+kill -9 "$pid"
+for _ in $(seq 1 15); do server_running || break; sleep 1; done
+server_running && fail "the server kept running after the app was killed"
+curl -sf --max-time 2 "$api/ping" >/dev/null && fail "the server still answers after the app was killed"
+echo "ok: killing the app also stops its server"
 echo "PASS"

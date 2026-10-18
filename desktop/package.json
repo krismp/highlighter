@@ -1,0 +1,11 @@
+{
+  "name": "highlighter-desktop",
+  "private": true,
+  "description": "Tauri shell that runs the highlighter server as a sidecar and shows its UI in a native window",
+  "scripts": {
+    "tauri": "tauri"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.12.3"
+  }
+}

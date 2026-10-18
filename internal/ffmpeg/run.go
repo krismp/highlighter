@@ -5,8 +5,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/krismp/highlighter/internal/proc"
 	"os"
-	"os/exec"
 	"strings"
 )
 
@@ -50,7 +50,7 @@ func (r Runner) Concat(ctx context.Context, inputs []string, output string) erro
 }
 
 func (r Runner) run(ctx context.Context, args []string, onLine func(string)) error {
-	cmd := exec.CommandContext(ctx, r.Bin, args...)
+	cmd := proc.Command(ctx, r.Bin, args...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	stdout, err := cmd.StdoutPipe()
@@ -78,7 +78,7 @@ func (r Runner) run(ctx context.Context, args []string, onLine func(string)) err
 
 // DetectEncoder test-encodes a tiny clip with VideoToolbox and falls back to libx264.
 func DetectEncoder(ctx context.Context, bin string) Encoder {
-	cmd := exec.CommandContext(ctx, bin, "-hide_banner", "-loglevel", "error",
+	cmd := proc.Command(ctx, bin, "-hide_banner", "-loglevel", "error",
 		"-f", "lavfi", "-i", "color=c=black:s=128x128:d=0.2",
 		"-c:v", string(VideoToolbox), "-f", "null", "-")
 	if cmd.Run() == nil {
