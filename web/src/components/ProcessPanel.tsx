@@ -1,12 +1,13 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { CircleCheck, FolderOpen, Pencil, RotateCw, Search } from "lucide-react";
+import { CircleCheck, FolderOpen, Pencil, RotateCw, Search, Trash2 } from "lucide-react";
 import { useState } from "react";
+import { ConfirmButton } from "@/components/ConfirmButton";
 import { OpenVideoForm } from "@/components/OpenVideoForm";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useConnectivity } from "@/hooks/useConnectivity";
-import { useFileManager } from "@/hooks/useFileManager";
+import { useFileManager, useTrashName } from "@/hooks/useFileManager";
 import { api, type JobStatus, type JobView, type OutputMode, type SessionView } from "@/lib/api";
 import { reportError } from "@/lib/errors";
 import { bytes, length } from "@/lib/format";
@@ -109,17 +110,36 @@ function StatusChip({ status, progress }: { status: JobStatus; progress?: number
   );
 }
 
-/** A finished file is already on disk: say so, and offer to point at it in Finder / File Explorer. */
-function Saved({ onReveal, pending }: { onReveal: () => void; pending: boolean }) {
+/**
+ * A finished file is on disk: say so, offer to point at it in Finder / File
+ * Explorer and, once the run is over, to move it to the Trash (restorable
+ * there). A trashed file just says where it went.
+ */
+function Saved({ trashed, canTrash, pending, onReveal, onTrash }:
+  { trashed: boolean; canTrash: boolean; pending: boolean; onReveal: () => void; onTrash: () => void }) {
   const fileManager = useFileManager();
+  const trashName = useTrashName();
+  if (trashed) {
+    return (
+      <span className="inline-flex items-center gap-1 text-muted-foreground" title={`You can restore it from the ${trashName}.`}>
+        <Trash2 className="size-4" /> Moved to {trashName}
+      </span>
+    );
+  }
   return (
-    <span className="inline-flex items-center gap-1">
+    <span className="inline-flex flex-wrap items-center gap-1">
       <span className="inline-flex items-center gap-1 font-medium text-net">
         <CircleCheck className="size-4" /> Saved
       </span>
       <Button size="sm" variant="ghost" disabled={pending} onClick={onReveal} title={`Show this file in ${fileManager}`}>
         <Search className="size-3.5" /> Show in {fileManager}
       </Button>
+      {canTrash && (
+        <ConfirmButton question={`Move this file to the ${trashName}?`} confirmLabel={`Move to ${trashName}`}
+          disabled={pending} onConfirm={onTrash} title={`Move this file to the ${trashName}; you can restore it from there`}>
+          <Trash2 className="size-3.5" /> Move to {trashName}
+        </ConfirmButton>
+      )}
     </span>
   );
 }
@@ -132,6 +152,11 @@ export function JobResults({ session, job, onEdit }: { session: SessionView; job
   const retry = useMutation({ meta: { errorTitle: "Couldn't retry" }, mutationFn: (clipId: string) => api.retry(id, clipId), onSuccess: setJob });
   const openFolder = useMutation({ meta: { errorTitle: "Couldn't open the folder" }, mutationFn: () => api.openFolder(id) });
   const reveal = useMutation({ meta: { errorTitle: "Couldn't show the file" }, mutationFn: (file: string) => api.reveal(id, file) });
+  const trash = useMutation({
+    meta: { errorTitle: "Couldn't move the file to the Trash" },
+    mutationFn: (file: string) => api.trash(id, file),
+    onSuccess: (v) => v && setJob(v),
+  });
   const playbackFailed = (file: string) => reportError("Couldn't play a saved file", `${file} could not be played here. It is still saved in ${job.outputDir}.`);
 
   const partsOnly = job.mode === "reel";
@@ -140,7 +165,7 @@ export function JobResults({ session, job, onEdit }: { session: SessionView; job
   const progress = (job.clips.reduce((sum, c) => sum + (c.status === "done" ? 1 : c.progress), 0) + (job.concat.status === "done" ? 1 : 0)) / Math.max(1, steps);
   const failed = job.clips.filter((c) => c.status === "failed").length + (job.concat.status === "failed" ? 1 : 0);
   const finished = !job.running;
-  const files = (partsOnly ? 0 : job.clips.filter((c) => c.status === "done").length) + (job.concat.status === "done" ? 1 : 0);
+  const files = (partsOnly ? 0 : job.clips.filter((c) => c.status === "done" && !c.trashed).length) + (job.concat.status === "done" && !job.concat.trashed ? 1 : 0);
   const totalLength = job.concat.status === "done" ? job.concat.duration : job.clips.filter((c) => c.status === "done").reduce((s, c) => s + c.duration, 0);
 
   return (
@@ -197,7 +222,8 @@ export function JobResults({ session, job, onEdit }: { session: SessionView; job
               {job.concat.status === "done" && (
                 <>
                   <span className="score text-sm text-muted-foreground">{length(job.concat.duration)}<span className="ml-2">{bytes(job.concat.size)}</span></span>
-                  <Saved pending={reveal.isPending} onReveal={() => reveal.mutate(job.concat.file)} />
+                  <Saved trashed={job.concat.trashed} canTrash={finished} pending={reveal.isPending || trash.isPending}
+                    onReveal={() => reveal.mutate(job.concat.file)} onTrash={() => trash.mutate(job.concat.file)} />
                 </>
               )}
               {job.concat.status === "failed" && (
@@ -206,7 +232,7 @@ export function JobResults({ session, job, onEdit }: { session: SessionView; job
             </div>
             {job.concat.status === "queued" && finished && <p className="text-xs text-muted-foreground">Waiting for failed clips to be retried.</p>}
             {job.concat.status === "failed" && <p className="text-xs text-destructive">{job.concat.error}</p>}
-            {job.concat.status === "done" && <video className="w-full rounded-md" src={api.fileUrl(id, job.concat.file)} controls preload="metadata" onError={() => playbackFailed(job.concat.file)} />}
+            {job.concat.status === "done" && !job.concat.trashed && <video className="w-full rounded-md" src={api.fileUrl(id, job.concat.file)} controls preload="metadata" onError={() => playbackFailed(job.concat.file)} />}
           </li>
         )}
 
@@ -227,7 +253,8 @@ export function JobResults({ session, job, onEdit }: { session: SessionView; job
                 <Button size="sm" variant="outline" disabled={retry.isPending} onClick={() => retry.mutate(c.clipId)}><RotateCw className="size-3.5" /> Retry</Button>
               )}
               {c.status === "done" && !partsOnly && (
-                <Saved pending={reveal.isPending} onReveal={() => reveal.mutate(c.file)} />
+                <Saved trashed={c.trashed} canTrash={finished} pending={reveal.isPending || trash.isPending}
+                  onReveal={() => reveal.mutate(c.file)} onTrash={() => trash.mutate(c.file)} />
               )}
             </div>
             {c.status === "processing" && (
@@ -236,7 +263,7 @@ export function JobResults({ session, job, onEdit }: { session: SessionView; job
               </div>
             )}
             {c.status === "failed" && <p className="text-xs text-destructive">{c.error}</p>}
-            {c.status === "done" && !partsOnly && <video className="w-full rounded-md" src={api.fileUrl(id, c.file)} controls preload="metadata" onError={() => playbackFailed(c.file)} />}
+            {c.status === "done" && !c.trashed && !partsOnly && <video className="w-full rounded-md" src={api.fileUrl(id, c.file)} controls preload="metadata" onError={() => playbackFailed(c.file)} />}
           </li>
         ))}
       </ul>

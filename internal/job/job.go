@@ -70,6 +70,7 @@ type ClipState struct {
 	Error    string  `json:"error"`
 	Duration float64 `json:"duration"` // seconds of video in the file
 	Size     int64   `json:"size"`     // bytes, set once done
+	Trashed  bool    `json:"trashed"`  // the finished file was moved to the Trash
 }
 
 type ConcatState struct {
@@ -79,6 +80,7 @@ type ConcatState struct {
 	Error     string  `json:"error"`
 	Duration  float64 `json:"duration"`
 	Size      int64   `json:"size"`
+	Trashed   bool    `json:"trashed"`
 }
 
 type View struct {
@@ -138,6 +140,47 @@ func NewManager(r Resolver, c Cutter) *Manager {
 		ctx:      ctx,
 		stop:     stop,
 	}
+}
+
+// MarkTrashed records that the finished file named file (a clip or the reel)
+// was moved to the Trash. It reports false when the session has no such
+// finished file.
+func (m *Manager) MarkTrashed(sessionID, file string) (View, bool) {
+	m.mu.Lock()
+	j, ok := m.jobs[sessionID]
+	m.mu.Unlock()
+	if !ok {
+		return View{}, false
+	}
+	found := false
+	v := m.update(j, func() {
+		if j.concat.Requested && j.concat.File == file && j.concat.Status == Done {
+			j.concat.Trashed, j.concat.Size, found = true, 0, true
+		}
+		for i := range j.clips {
+			if c := &j.clips[i]; c.File == file && c.Status == Done && j.req.Mode != ModeReel {
+				c.Trashed, c.Size, found = true, 0, true
+			}
+		}
+	})
+	return v, found
+}
+
+// Forget drops a finished job's results; it reports false (and keeps them)
+// while the job is still running.
+func (m *Manager) Forget(sessionID string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if j, ok := m.jobs[sessionID]; ok {
+		j.mu.Lock()
+		running := j.viewLocked().Running
+		j.mu.Unlock()
+		if running {
+			return false
+		}
+		delete(m.jobs, sessionID)
+	}
+	return true
 }
 
 // ErrShuttingDown is returned by Start and Retry once Shutdown has begun.

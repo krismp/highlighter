@@ -103,3 +103,22 @@ func TestSettingsWithoutDefaultDurationLoadTen(t *testing.T) {
 		t.Fatalf("got %+v, %v; want default length 10", got, err)
 	}
 }
+
+func TestDeleteSession(t *testing.T) {
+	s := newStore(t)
+	if _, err := s.SaveSession(Session{VideoID: "jNQXAC9IVRw", Title: "Me at the zoo"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteSession("jNQXAC9IVRw"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.LoadSession("jNQXAC9IVRw"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("after delete: %v", err)
+	}
+	if err := s.DeleteSession("jNQXAC9IVRw"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("second delete: %v", err)
+	}
+	if err := s.DeleteSession("../etc"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("bad id: %v", err)
+	}
+}

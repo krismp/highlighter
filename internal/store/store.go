@@ -101,6 +101,22 @@ func (s *Store) LoadSession(id string) (Session, error) {
 	return sess, nil
 }
 
+// DeleteSession forgets a session (its clips' start times and labels). The
+// clip files it produced are not touched.
+func (s *Store) DeleteSession(id string) error {
+	path, ok := s.sessionPath(id)
+	if !ok {
+		return ErrNotFound
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	err := os.Remove(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return ErrNotFound
+	}
+	return err
+}
+
 func (s *Store) RecentSessions(limit int) ([]Session, error) {
 	entries, err := os.ReadDir(filepath.Join(s.dir, "sessions"))
 	if err != nil {

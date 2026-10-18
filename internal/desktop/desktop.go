@@ -3,6 +3,7 @@
 package desktop
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -30,4 +31,26 @@ func IsTemporary(path string) bool {
 		}
 	}
 	return false
+}
+
+// uniqueRename moves path into dir, adding " 2", " 3"... before the
+// extension when a file of that name is already there.
+func uniqueRename(path, dir string) (string, error) {
+	base := filepath.Base(path)
+	ext := filepath.Ext(base)
+	stem := strings.TrimSuffix(base, ext)
+	for i := 1; ; i++ {
+		name := base
+		if i > 1 {
+			name = fmt.Sprintf("%s %d%s", stem, i, ext)
+		}
+		dest := filepath.Join(dir, name)
+		if _, err := os.Lstat(dest); err == nil {
+			continue
+		}
+		if err := os.Rename(path, dest); err != nil {
+			return "", fmt.Errorf("move to Trash: %w", err)
+		}
+		return name, nil
+	}
 }

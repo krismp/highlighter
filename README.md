@@ -70,6 +70,10 @@ on systems without it the installer downloads it.
   Finished clips stay saved; unfinished ones are not saved.
 - **Errors:** anything that goes wrong shows up as an alert in the corner of
   the window. **Copy details** copies everything needed for a bug report.
+- **Deleting:** after a run, **Move to Trash** (Recycle Bin on Windows)
+  next to a clip or the reel removes that file; restore it from the Trash
+  if you change your mind. The **×** next to a recent video removes it from
+  the list (its marked start times); its clip files stay saved.
 - **Clips folder:** clips go to `Movies/Highlights` on macOS and
   `Videos\Highlights` on Windows. Change it in **Settings**.
 

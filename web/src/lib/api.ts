@@ -14,12 +14,12 @@ export interface Connectivity { online: boolean; error: string }
 export interface Settings { outputRoot: string; concurrency: number; defaultDuration: number }
 export interface LineError { line: number; text: string; err: string }
 export type JobStatus = "queued" | "processing" | "done" | "failed";
-export interface ClipState { clipId: string; file: string; status: JobStatus; progress: number; attempt: number; error: string; duration: number; size: number }
+export interface ClipState { clipId: string; file: string; status: JobStatus; progress: number; attempt: number; error: string; duration: number; size: number; trashed: boolean }
 /** Which files a run leaves in the folder: each clip, only the combined reel, or both. */
 export type OutputMode = "clips" | "reel" | "both";
 export interface JobView {
   sessionId: string; outputDir: string; mode: OutputMode; clips: ClipState[]; running: boolean;
-  concat: { requested: boolean; status: JobStatus | ""; file: string; error: string; duration: number; size: number };
+  concat: { requested: boolean; status: JobStatus | ""; file: string; error: string; duration: number; size: number; trashed: boolean };
 }
 
 export class ApiError extends Error {
@@ -81,6 +81,9 @@ export const api = {
     request<JobView>("POST", `/sessions/${id}/process`, { mode, reelName }),
   retry: (id: string, clipId: string) => request<JobView>("POST", `/sessions/${id}/retry/${clipId}`),
   openFolder: (id: string) => request<void>("POST", `/sessions/${id}/open-folder`),
+  /** Moves a finished file to the Trash; returns the updated results when the file belongs to the last run. */
+  trash: (id: string, file: string) => request<JobView | undefined>("POST", `/sessions/${id}/files/${encodeURIComponent(file)}/trash`),
+  deleteSession: (id: string) => request<void>("DELETE", `/sessions/${id}`),
   reveal: (id: string, file: string) => request<void>("POST", `/sessions/${id}/files/${encodeURIComponent(file)}/reveal`),
   fileUrl: (id: string, file: string) => `/api/sessions/${id}/files/${encodeURIComponent(file)}`,
   eventsUrl: (id: string) => `/api/sessions/${id}/events`,
