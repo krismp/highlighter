@@ -106,7 +106,10 @@ tools there first, then on PATH.
 
 Pushing a `v*` tag runs `.github/workflows/release.yml`: it builds all three
 installers, smoke-tests each on a real Apple Silicon Mac, Intel Mac and
-Windows machine, and publishes them as a GitHub release. The builds are not
+Windows machine, and publishes them as a GitHub release. Creating the release
+on GitHub instead (Releases → *Draft a new release* with a new `v*` tag) works
+too: the installers are attached to it when the run finishes, and the
+standard install notes are added if you left the description empty. The builds are not
 code-signed or notarized, hence the one-time "Open Anyway" / "Run anyway"
 steps above; signing needs an Apple Developer ID and a Windows code-signing
 certificate.
