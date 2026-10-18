@@ -50,11 +50,17 @@ type env struct {
 	out      string
 	cfg      string
 	revealed *[]string // paths passed to RevealPath
+	trashed  *[]string // paths passed to TrashPath
 	quit     chan struct{}
 	internet *error // what the Internet check returns
 }
 
 func newEnv(t *testing.T) *env {
+	t.Helper()
+	return newEnvWith(t, fileCutter{})
+}
+
+func newEnvWith(t *testing.T, cutter job.Cutter) *env {
 	t.Helper()
 	dir := t.TempDir()
 	out := filepath.Join(dir, "out")
@@ -63,10 +69,11 @@ func newEnv(t *testing.T) *env {
 		t.Fatal(err)
 	}
 	res := &fakeResolver{}
-	jobs := job.NewManager(res, fileCutter{})
+	jobs := job.NewManager(res, cutter)
 	jobs.Backoff = []time.Duration{0, 0}
 	n := 0
 	revealed := &[]string{}
+	trashed := &[]string{}
 	quit := make(chan struct{}, 1)
 	internet := new(error)
 	h := New(Deps{
@@ -75,6 +82,7 @@ func newEnv(t *testing.T) *env {
 		UpdateYtDlp: func(context.Context) (string, error) { return "updated", nil },
 		OpenPath:    func(string) error { return nil },
 		RevealPath:  func(p string) error { *revealed = append(*revealed, p); return nil },
+		TrashPath:   func(p string) error { *trashed = append(*trashed, p); return os.Remove(p) },
 		Quit:        func() { quit <- struct{}{} },
 		Internet:    func(context.Context) error { return *internet },
 		NewID:       func() string { n++; return fmt.Sprintf("c%d", n) },
@@ -85,7 +93,7 @@ func newEnv(t *testing.T) *env {
 	})
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
-	return &env{srv: srv, resolver: res, jobs: jobs, out: out, cfg: filepath.Join(dir, "config"), revealed: revealed, quit: quit, internet: internet}
+	return &env{srv: srv, resolver: res, jobs: jobs, out: out, cfg: filepath.Join(dir, "config"), revealed: revealed, trashed: trashed, quit: quit, internet: internet}
 }
 
 func (e *env) do(t *testing.T, method, path string, body any) (int, []byte) {
@@ -467,6 +475,87 @@ func TestQuitRespondsThenStops(t *testing.T) {
 	case <-e.quit:
 	case <-time.After(2 * time.Second):
 		t.Fatal("Quit was not called")
+	}
+}
+
+func TestTrashFinishedFile(t *testing.T) {
+	e := newEnv(t)
+	e.open(t)
+	v := e.approveAll(t, e.addClips(t, "0:01 tip off\n0:05 dunk").Session)
+	if code, data := e.do(t, "POST", "/api/sessions/"+vid+"/process", map[string]string{"mode": "clips"}); code != 202 {
+		t.Fatalf("process: %d %s", code, data)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if jv, _ := e.jobs.View(vid); !jv.Running {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("job did not finish")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	base := "/api/sessions/" + vid + "/files/"
+	code, data := e.do(t, "POST", base+v.Clips[0].File+"/trash", nil)
+	if code != 200 {
+		t.Fatalf("trash: %d %s", code, data)
+	}
+	jv := decode[job.View](t, data)
+	if !jv.Clips[0].Trashed || jv.Clips[1].Trashed {
+		t.Errorf("trashed flags: %+v", jv.Clips)
+	}
+	want := filepath.Join(e.out, "Me at the zoo", v.Clips[0].File)
+	if len(*e.trashed) != 1 || (*e.trashed)[0] != want {
+		t.Errorf("trashed %v; want [%s]", *e.trashed, want)
+	}
+	if code, _ := e.do(t, "POST", base+v.Clips[0].File+"/trash", nil); code != 404 {
+		t.Errorf("trash twice: %d; want 404", code)
+	}
+	if code, _ := e.do(t, "POST", base+"..%2Fsettings.json/trash", nil); code != 400 {
+		t.Errorf("path escape: %d; want 400", code)
+	}
+}
+
+// gatedCutter holds every cut until gate is closed, so a job stays running.
+type gatedCutter struct{ gate chan struct{} }
+
+func (g gatedCutter) Cut(ctx context.Context, spec ffmpeg.CutSpec, p func(float64)) error {
+	<-g.gate
+	return os.WriteFile(spec.Output, []byte("clip"), 0o644)
+}
+func (g gatedCutter) Concat(ctx context.Context, inputs []string, output string) error { return nil }
+
+func TestTrashAndDeleteRefusedWhileProcessing(t *testing.T) {
+	gate := make(chan struct{})
+	e := newEnvWith(t, gatedCutter{gate})
+	defer close(gate)
+	e.open(t)
+	v := e.approveAll(t, e.addClips(t, "0:01 tip off").Session)
+	if code, data := e.do(t, "POST", "/api/sessions/"+vid+"/process", map[string]string{"mode": "clips"}); code != 202 {
+		t.Fatalf("process: %d %s", code, data)
+	}
+	if code, data := e.do(t, "POST", "/api/sessions/"+vid+"/files/"+v.Clips[0].File+"/trash", nil); code != 409 {
+		t.Errorf("trash while running: %d %s; want 409", code, data)
+	}
+	if code, data := e.do(t, "DELETE", "/api/sessions/"+vid, nil); code != 409 {
+		t.Errorf("delete while running: %d %s; want 409", code, data)
+	}
+	if len(*e.trashed) != 0 {
+		t.Errorf("nothing may be trashed while running: %v", *e.trashed)
+	}
+}
+
+func TestDeleteSession(t *testing.T) {
+	e := newEnv(t)
+	e.open(t)
+	if code, data := e.do(t, "DELETE", "/api/sessions/"+vid, nil); code != 204 {
+		t.Fatalf("delete: %d %s", code, data)
+	}
+	if code, _ := e.do(t, "GET", "/api/sessions/"+vid, nil); code != 404 {
+		t.Errorf("after delete: %d; want 404", code)
+	}
+	if code, _ := e.do(t, "DELETE", "/api/sessions/"+vid, nil); code != 404 {
+		t.Errorf("delete twice: %d; want 404", code)
 	}
 }
 

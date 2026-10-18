@@ -37,6 +37,7 @@ type Deps struct {
 	UpdateYtDlp func(context.Context) (string, error)
 	OpenPath    func(string) error
 	RevealPath  func(string) error          // show a file selected in Finder / File Explorer
+	TrashPath   func(string) error          // move a file to the Trash / Recycle Bin
 	Quit        func()                      // stop the server; called after the response is sent
 	Internet    func(context.Context) error // nil when YouTube is reachable
 	NewID       func() string
@@ -68,6 +69,8 @@ func New(d Deps) http.Handler {
 	mux.HandleFunc("POST /api/sessions/{id}/open-folder", s.openFolder)
 	mux.HandleFunc("GET /api/sessions/{id}/files/{name}", s.file)
 	mux.HandleFunc("POST /api/sessions/{id}/files/{name}/reveal", s.reveal)
+	mux.HandleFunc("POST /api/sessions/{id}/files/{name}/trash", s.trash)
+	mux.HandleFunc("DELETE /api/sessions/{id}", s.deleteSession)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) { writeError(w, 404, "not found") })
 	mux.Handle("/", spa(d.UI))
 	return hostGuard(d.Port, mux)
@@ -545,4 +548,52 @@ func spa(ui fs.FS) http.Handler {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Write(index)
 	})
+}
+
+const busyMessage = "This video is still being processed. Wait until it finishes, then try again."
+
+// trash moves a finished clip or reel to the Trash / Recycle Bin, so a
+// mistake can be undone there, and marks it in the job's results.
+func (s *server) trash(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if jv, ok := s.Jobs.View(id); ok && jv.Running {
+		writeError(w, 409, busyMessage)
+		return
+	}
+	p, ok := s.filePath(w, r)
+	if !ok {
+		return
+	}
+	if _, err := os.Stat(p); err != nil {
+		writeError(w, 404, "file not found: "+filepath.Base(p))
+		return
+	}
+	if err := s.TrashPath(p); err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
+	if jv, ok := s.Jobs.MarkTrashed(id, filepath.Base(p)); ok {
+		writeJSON(w, 200, jv)
+		return
+	}
+	w.WriteHeader(204)
+}
+
+// deleteSession removes a video from the recent list: its clips' start times
+// and labels, and its last results. Clip files on disk are not touched.
+func (s *server) deleteSession(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if !s.Jobs.Forget(id) {
+		writeError(w, 409, busyMessage)
+		return
+	}
+	err := s.Store.DeleteSession(id)
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		writeError(w, 404, "session not found")
+	case err != nil:
+		writeError(w, 500, err.Error())
+	default:
+		w.WriteHeader(204)
+	}
 }

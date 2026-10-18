@@ -70,6 +70,10 @@ on systems without it the installer downloads it.
   Finished clips stay saved; unfinished ones are not saved.
 - **Errors:** anything that goes wrong shows up as an alert in the corner of
   the window. **Copy details** copies everything needed for a bug report.
+- **Deleting:** after a run, **Move to Trash** (Recycle Bin on Windows)
+  next to a clip or the reel removes that file; restore it from the Trash
+  if you change your mind. The **×** next to a recent video removes it from
+  the list (its marked start times); its clip files stay saved.
 - **Clips folder:** clips go to `Movies/Highlights` on macOS and
   `Videos\Highlights` on Windows. Change it in **Settings**.
 
@@ -124,12 +128,19 @@ make smoke     # install the Apple Silicon build in a temp folder and clip a rea
 `scripts/package.sh <target> [version]` builds one zipped installer
 (`macos-arm64`, `macos-amd64` or `windows-amd64`; Windows builds need a
 Windows machine). It bundles the latest yt-dlp and pinned, checksum-verified
-deno and ffmpeg, builds the server, and runs `tauri build`. The `.dmg` is
-recompressed with LZMA, about 17% smaller than Tauri's default.
+deno and ffmpeg, builds the server, and runs `tauri build`. The macOS `.dmg`
+is made with [dmgbuild](https://github.com/dmgbuild/dmgbuild) from
+`packaging/macos/dmg-settings.py`: the usual Mac install window (app on the
+left, an arrow, Applications on the right) without scripting Finder, so CI
+builds look the same, and LZMA-compressed, about 17% smaller than Tauri's
+default. The Windows installer uses the app icon and branded header and
+sidebar images.
 
-The app icon is drawn once in `packaging/icon/icon.svg`; after editing it, run
-`make icons` (on a Mac) to regenerate the desktop app icons and the browser
-favicon, and commit the results.
+The app icon (`packaging/icon/icon.svg`), the `.dmg` window background
+(`packaging/macos/dmg-background.svg`) and the Windows installer images
+(`packaging/windows/nsis-*.svg`) are SVGs; after editing one, run
+`make icons` (on a Mac) to regenerate the files the builds use, and commit
+the results.
 
 Pushing a `v*` tag runs `.github/workflows/release.yml`: it builds all three
 installers, installs and smoke-tests each on a real Apple Silicon Mac, Intel

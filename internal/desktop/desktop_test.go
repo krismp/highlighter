@@ -30,3 +30,27 @@ func TestVideosDirIsInHome(t *testing.T) {
 		t.Errorf("VideosDir = %q", got)
 	}
 }
+
+// TestTrash moves a real file to the user's Trash / Recycle Bin, so it only
+// runs on CI (or with HIGHLIGHTER_TEST_TRASH=1) to keep developers' Trash clean.
+func TestTrash(t *testing.T) {
+	if os.Getenv("CI") == "" && os.Getenv("HIGHLIGHTER_TEST_TRASH") == "" {
+		t.Skip("moves a file into the real Trash; set HIGHLIGHTER_TEST_TRASH=1 to run")
+	}
+	home, _ := os.UserHomeDir()
+	dir, err := os.MkdirTemp(home, "highlighter-trash-test-") // same disk as the Trash
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+	p := filepath.Join(dir, "01_0-02_trash-test.mp4")
+	if err := os.WriteFile(p, []byte("clip"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := Trash(p); err != nil {
+		t.Fatalf("Trash: %v", err)
+	}
+	if _, err := os.Stat(p); !os.IsNotExist(err) {
+		t.Fatalf("file still there after Trash (stat err %v)", err)
+	}
+}

@@ -98,6 +98,28 @@ jobs:
           cp -R /tmp/hl/Highlighter.app "$RUNNER_TEMP/"
           hdiutil detach /tmp/hl
           scripts/smoke-test.sh "$RUNNER_TEMP/Highlighter.app"
+      # A picture of the installer's first page, to review its look
+      # (kept as the "windows-installer-screenshot" artifact).
+      - name: Screenshot the installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          $setup = Get-ChildItem "$env:RUNNER_TEMP\pkg\*\*-setup.exe" | Select-Object -First 1
+          $p = Start-Process -FilePath $setup.FullName -PassThru
+          Start-Sleep -Seconds 8
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+          $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+          [System.Drawing.Graphics]::FromImage($bmp).CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+          $bmp.Save("$env:RUNNER_TEMP\installer.png")
+          Stop-Process -Id $p.Id -Force
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        with:
+          name: windows-installer-screenshot
+          path: ${{ runner.temp }}/installer.png
       - name: Run the installer silently
         if: runner.os == 'Windows'
         shell: pwsh

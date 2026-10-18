@@ -91,6 +91,7 @@ func main() {
 		UpdateYtDlp: health.afterUpdate(loc),
 		OpenPath:    desktop.Open,
 		RevealPath:  desktop.Reveal,
+		TrashPath:   desktop.Trash,
 		Internet:    tools.CheckInternet,
 		Quit:        func() { shutdown("Quit clicked in the app") },
 		NewID:       newID,

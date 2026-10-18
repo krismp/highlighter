@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="164" height="314" viewBox="0 0 164 314">
+  <!-- Windows installer sidebar (Welcome and Finish pages): scoreboard navy,
+       the basketball, the court-orange stripe from the app's header. -->
+  <defs>
+    <radialGradient id="shine" cx="40%" cy="35%" r="70%">
+      <stop offset="0" stop-color="#ff7a2e"/>
+      <stop offset="1" stop-color="#d14e06"/>
+    </radialGradient>
+  </defs>
+  <rect width="164" height="314" fill="#0f1a30"/>
+  <g fill="none" stroke="#1c2a47" stroke-width="2">
+    <circle cx="82" cy="314" r="70"/>
+    <line x1="0" y1="314" x2="164" y2="314"/>
+  </g>
+  <g transform="translate(82 120)">
+    <circle r="52" fill="url(#shine)"/>
+    <g fill="none" stroke="#0f1a30" stroke-width="4" stroke-linecap="round">
+      <circle r="52"/>
+      <line x1="0" y1="-52" x2="0" y2="52"/>
+      <line x1="-52" y1="0" x2="52" y2="0"/>
+      <path d="M -37 -37 Q -12 0 -37 37"/>
+      <path d="M 37 -37 Q 12 0 37 37"/>
+    </g>
+  </g>
+  <rect y="298" width="164" height="16" fill="#ea5b0c"/>
+</svg>

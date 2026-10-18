@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="150" height="57" viewBox="0 0 150 57">
+  <!-- Windows installer header (top right of each step): the app badge on white. -->
+  <rect width="150" height="57" fill="#ffffff"/>
+  <g transform="translate(97 6) scale(0.0442)">
+    <rect x="100" y="100" width="824" height="824" rx="185" fill="#0f1a30"/>
+    <g transform="translate(512 470)">
+      <circle r="270" fill="#ea5b0c"/>
+      <g fill="none" stroke="#0f1a30" stroke-width="28" stroke-linecap="round">
+        <line x1="0" y1="-270" x2="0" y2="270"/>
+        <line x1="-270" y1="0" x2="270" y2="0"/>
+        <path d="M -191 -191 Q -60 0 -191 191"/>
+        <path d="M 191 -191 Q 60 0 191 191"/>
+      </g>
+    </g>
+  </g>
+</svg>

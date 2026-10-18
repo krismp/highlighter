@@ -405,3 +405,22 @@ func TestShutdownStopsRunningWork(t *testing.T) {
 		t.Fatalf("Start after shutdown: err = %v; want ErrShuttingDown", err)
 	}
 }
+
+func TestMarkTrashed(t *testing.T) {
+	m := newManager(&fakeCutter{}, &fakeResolver{})
+	m.Start(request(2, ModeBoth))
+	waitFor(t, m, idle)
+	if _, ok := m.MarkTrashed("abc", "nope.mp4"); ok {
+		t.Error("unknown file marked")
+	}
+	if _, ok := m.MarkTrashed("other", "a.mp4"); ok {
+		t.Error("unknown session marked")
+	}
+	v, ok := m.MarkTrashed("abc", "a.mp4")
+	if !ok || !v.Clips[0].Trashed || v.Clips[1].Trashed || v.Concat.Trashed {
+		t.Fatalf("clip a: ok=%v %+v", ok, v)
+	}
+	if v, ok = m.MarkTrashed("abc", ConcatFile); !ok || !v.Concat.Trashed {
+		t.Fatalf("reel: ok=%v %+v", ok, v.Concat)
+	}
+}

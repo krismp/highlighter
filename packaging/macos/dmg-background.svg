@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="660" height="400" viewBox="0 0 660 400">
+  <!-- .dmg window background: drag the app (left, centre 170,190) onto
+       Applications (right, centre 490,190). Light, because Finder draws the
+       icon labels in dark text. Faint basketball-court lines as texture. -->
+  <rect width="660" height="400" fill="#f4f1ec"/>
+  <g fill="none" stroke="#e3dcd1" stroke-width="3">
+    <line x1="330" y1="-10" x2="330" y2="410"/>
+    <circle cx="330" cy="200" r="62"/>
+    <circle cx="330" cy="200" r="16"/>
+    <path d="M -10 40 H 60 A 165 165 0 0 1 60 360 H -10"/>
+    <rect x="-10" y="135" width="110" height="130"/>
+    <circle cx="100" cy="200" r="48"/>
+    <path d="M 670 40 H 600 A 165 165 0 0 0 600 360 H 670"/>
+    <rect x="560" y="135" width="110" height="130"/>
+    <circle cx="560" cy="200" r="48"/>
+  </g>
+  <!-- the arrow: court orange with the scoreboard-navy outline -->
+  <path d="M 268 190 H 372 M 344 160 L 378 190 L 344 220"
+        fill="none" stroke="#0f1a30" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M 268 190 H 372 M 344 160 L 378 190 L 344 220"
+        fill="none" stroke="#ea5b0c" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
