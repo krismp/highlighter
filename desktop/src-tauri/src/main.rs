@@ -174,35 +174,25 @@ fn may_quit(app: &AppHandle) -> bool {
 }
 
 /// The main window starts on the bundled splash page and is pointed at the
-/// server once it answers. Links to other sites open in the default browser.
+/// server once it answers. Links that open a new window (the YouTube
+/// player's "Watch on YouTube", for one) go to the default browser.
+///
+/// There is deliberately no navigation filter: on macOS it also sees every
+/// embedded frame's navigation (wry does not say which frame), so filtering
+/// out other sites cancelled the YouTube player and opened it in the browser
+/// instead, where it shows "Error 153". The app's own pages link nowhere else.
 fn build_window(app: &AppHandle) -> tauri::Result<WebviewWindow> {
-    let nav_app = app.clone();
     let popup_app = app.clone();
     WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
         .title("Highlighter")
         .inner_size(1280.0, 860.0)
         .min_inner_size(820.0, 560.0)
         .center()
-        .on_navigation(move |url| {
-            if is_app_url(url) {
-                return true;
-            }
-            let _ = nav_app.opener().open_url(url.as_str(), None::<&str>);
-            false
-        })
         .on_new_window(move |url, _features| {
             let _ = popup_app.opener().open_url(url.as_str(), None::<&str>);
             NewWindowResponse::Deny
         })
         .build()
-}
-
-/// The splash page (tauri://localhost, or http://tauri.localhost on Windows)
-/// and the local server. Embedded frames (the YouTube player) are not
-/// main-frame navigations and are unaffected.
-fn is_app_url(url: &Url) -> bool {
-    matches!(url.scheme(), "tauri" | "about" | "data" | "blob")
-        || matches!(url.host_str(), Some("127.0.0.1" | "localhost" | "tauri.localhost"))
 }
 
 fn start_server(app: AppHandle, window: WebviewWindow) {
@@ -226,7 +216,7 @@ fn start_server(app: AppHandle, window: WebviewWindow) {
             }
             if http_get(port, "/api/ping").is_some_and(|body| body.contains("\"highlighter\"")) {
                 app.state::<Server>().ready.store(true, Ordering::SeqCst);
-                let url = Url::parse(&format!("http://127.0.0.1:{port}/")).expect("valid URL");
+                let url = Url::parse(&format!("http://127.0.0.1:{port}{}", start_path())).expect("valid URL");
                 let _ = window.navigate(url);
                 return;
             }
@@ -335,6 +325,14 @@ fn end_with_app(child: &Child) {
         // The job handle is deliberately never closed: Windows closes it when
         // this process ends, which is what triggers the kill.
     }
+}
+
+/// The page the window opens on: "/", or HIGHLIGHTER_START_PATH (smoke tests).
+fn start_path() -> String {
+    std::env::var("HIGHLIGHTER_START_PATH")
+        .ok()
+        .filter(|p| p.starts_with('/') && !p.starts_with("//"))
+        .unwrap_or_else(|| "/".into())
 }
 
 fn choose_port() -> u16 {
