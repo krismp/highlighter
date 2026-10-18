@@ -28,6 +28,7 @@ mkdir -p "$cache"
 # Pinned versions (yt-dlp is always the latest). The ffmpeg hashes come from
 # the .sha256 files published next to each archive.
 DENO_VERSION=v2.9.7
+DMGBUILD_VERSION=1.6.7
 FFMPEG_MAC_ARM64_URL=https://ffmpeg.martin-riedl.de/download/macos/arm64/1789931890_9.0.2/ffmpeg.zip
 FFMPEG_MAC_ARM64_SHA=c8ed4c4e6978a03c485edbfe4e0a5dc2380f8a30bba5150531b31b094492d924
 FFMPEG_MAC_AMD64_URL=https://ffmpeg.martin-riedl.de/download/macos/amd64/1789931006_9.0.2/ffmpeg.zip
@@ -37,11 +38,11 @@ FFMPEG_WIN_SHA=60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba
 
 case "$target" in
   macos-arm64)
-    goos=darwin goarch=arm64 label=macos-apple-silicon triple=aarch64-apple-darwin bundle=dmg
+    goos=darwin goarch=arm64 label=macos-apple-silicon triple=aarch64-apple-darwin bundle=app
     ytdlp_asset=yt-dlp_macos deno_asset=deno-aarch64-apple-darwin.zip
     ffmpeg_url=$FFMPEG_MAC_ARM64_URL ffmpeg_sha=$FFMPEG_MAC_ARM64_SHA ;;
   macos-amd64)
-    goos=darwin goarch=amd64 label=macos-intel triple=x86_64-apple-darwin bundle=dmg
+    goos=darwin goarch=amd64 label=macos-intel triple=x86_64-apple-darwin bundle=app
     ytdlp_asset=yt-dlp_macos deno_asset=deno-x86_64-apple-darwin.zip
     ffmpeg_url=$FFMPEG_MAC_AMD64_URL ffmpeg_sha=$FFMPEG_MAC_AMD64_SHA ;;
   windows-amd64)
@@ -131,17 +132,27 @@ pnpm --dir "$root/desktop" install --frozen-lockfile
 rustup target add "$triple" >/dev/null 2>&1 || true
 args=(build --target "$triple" --bundles "$bundle")
 [[ -n $version ]] && args+=(--config "{\"version\":\"$version\"}")
-# CI=true skips the Finder AppleScript that styles the .dmg window, which
-# would otherwise open Finder and ask for automation permission.
-CI=true pnpm --dir "$root/desktop" tauri "${args[@]}"
+pnpm --dir "$root/desktop" tauri "${args[@]}"
 
-out_dir="$tauri/target/$triple/release/bundle/$bundle"
+out_dir="$tauri/target/$triple/release/bundle/$([[ $bundle == app ]] && echo macos || echo "$bundle")"
 name="Highlighter-${version:-$(git -C "$root" describe --tags --always --dirty 2>/dev/null || echo dev)}-$label"
 pkg="$work/$name"
 mkdir -p "$pkg" "$dist"
-if [[ $bundle == dmg ]]; then
-  # Recompress with LZMA (macOS 10.15+): about 17% smaller than Tauri's zlib .dmg.
-  hdiutil convert -quiet "$(ls -t "$out_dir"/*.dmg | head -1)" -format ULMO -o "$pkg/$name.dmg"
+if [[ $bundle == app ]]; then
+  # The .dmg is built with dmgbuild rather than Tauri: Tauri styles the
+  # window by scripting Finder, which CI skips, leaving a bare Finder window.
+  # dmgbuild writes the layout (background, arrow, icon places) directly and
+  # compresses with LZMA, about 17% smaller than Tauri's zlib .dmg.
+  venv="$cache/dmgbuild-$DMGBUILD_VERSION"
+  if [[ ! -x $venv/bin/dmgbuild ]]; then
+    python3 -m venv "$venv"
+    "$venv/bin/pip" install --quiet "dmgbuild==$DMGBUILD_VERSION"
+  fi
+  "$venv/bin/dmgbuild" -s "$root/packaging/macos/dmg-settings.py" \
+    -D app="$out_dir/Highlighter.app" \
+    -D background="$root/packaging/macos/dmg-background.tiff" \
+    -D volume_icon="$tauri/icons/icon.icns" \
+    "Highlighter" "$pkg/$name.dmg"
   cp "$root/packaging/macos/INSTALL.txt" "$pkg/"
 else
   cp "$(ls -t "$out_dir"/*-setup.exe | head -1)" "$pkg/$name-setup.exe"
