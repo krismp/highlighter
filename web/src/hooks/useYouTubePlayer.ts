@@ -36,8 +36,8 @@ function playerErrorMessage(code: number): string {
     case 5: return "This video can't be played in the embedded player.";
     case 100: return "This video was removed or is private.";
     case 101:
-    case 150:
-    case 153: return "The video's owner doesn't allow it to be played outside YouTube. You can still cut clips from it.";
+    case 150: return "The video's owner doesn't allow it to be played outside YouTube. You can still cut clips from it.";
+    case 153: return "YouTube couldn't tell which page the player is on (error 153), so it refused to play here. You can still cut clips from it.";
     default: return `The YouTube player reported error ${code}.`;
   }
 }
