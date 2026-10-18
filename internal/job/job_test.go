@@ -119,7 +119,7 @@ func TestRunsAllClips(t *testing.T) {
 	}
 	slices.SortFunc(c.cuts, func(a, b ffmpeg.CutSpec) int { return int(a.Start - b.Start) })
 	got := c.cuts[1]
-	if got.Start != 10 || got.Duration != 10 || got.Output != "/out/b.mp4" || got.Encoder != ffmpeg.X264 ||
+	if got.Start != 10 || got.Duration != 10 || got.Output != filepath.FromSlash("/out/b.mp4") || got.Encoder != ffmpeg.X264 ||
 		got.Video.URL != "https://v" || got.Audio.URL != "https://a" {
 		t.Errorf("cut spec %+v", got)
 	}
@@ -206,6 +206,9 @@ func TestConcatAfterAllDoneInOrder(t *testing.T) {
 	m.Start(request(3, ModeBoth))
 	v := waitFor(t, m, func(v View) bool { return v.Concat.Status == Done })
 	want := []string{"/out/highlights_full.mp4", "/out/a.mp4", "/out/b.mp4", "/out/c.mp4"}
+	for i := range want {
+		want[i] = filepath.FromSlash(want[i])
+	}
 	if len(c.concats) != 1 || !slices.Equal(c.concats[0], want) {
 		t.Errorf("concats = %v; want [%v]", c.concats, want)
 	}
