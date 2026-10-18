@@ -132,6 +132,7 @@ if [[ $goos == darwin ]]; then
   sed "s/@VERSION@/$version/g" "$root/packaging/macos/Info.plist" > "$app/Contents/Info.plist"
   mkdir -p "$app/Contents/Resources"
   cp "$notices" "$app/Contents/Resources/"
+  cp "$root/packaging/icon/AppIcon.icns" "$app/Contents/Resources/"
   # Ad-hoc signature: not notarized, but keeps Gatekeeper's "Open Anyway"
   # path available instead of reporting the app as damaged.
   codesign --force --deep --sign - "$app"
@@ -140,7 +141,16 @@ if [[ $goos == darwin ]]; then
   cp "$root/packaging/macos/How to install.txt" "$stage/"
   out="$dist/Highlighter-$version-$label.dmg"
   rm -f "$out"
-  hdiutil create -quiet -volname "Highlighter" -srcfolder "$stage" -fs HFS+ -format UDZO -ov "$out"
+  # Build read-write first so the mounted volume can get the app icon as its
+  # own icon (Finder shows it for the mounted disk), then compress.
+  hdiutil create -quiet -volname "Highlighter" -srcfolder "$stage" -fs HFS+ -format UDRW -ov "$work/rw.dmg"
+  vol="$work/vol"
+  hdiutil attach -quiet -nobrowse -noautoopen -mountpoint "$vol" "$work/rw.dmg"
+  cp "$root/packaging/icon/AppIcon.icns" "$vol/.VolumeIcon.icns"
+  SetFile -c icnC "$vol/.VolumeIcon.icns"
+  SetFile -a C "$vol"
+  hdiutil detach -quiet "$vol"
+  hdiutil convert -quiet "$work/rw.dmg" -format UDZO -o "$out"
 else
   cp "$root/packaging/windows/README.txt" "$stage/README.txt"
   cp "$notices" "$stage/"

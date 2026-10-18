@@ -99,6 +99,10 @@ make dist      # all three installers into dist/ (run on a Mac)
 make smoke     # install the Apple Silicon .dmg in a temp folder and clip a real video
 ```
 
+The app icon is drawn once in `packaging/icon/icon.svg`; after editing it, run
+`make icons` (on a Mac) to regenerate the macOS `.icns`, the icon embedded in
+`Highlighter.exe` and the browser favicon, and commit the results.
+
 `scripts/package.sh <target> [version]` builds one installer (`macos-arm64`,
 `macos-amd64` or `windows-amd64`). It bundles the latest yt-dlp, deno and
 ffmpeg (pinned, checksum-verified) next to the binary; the app looks for its

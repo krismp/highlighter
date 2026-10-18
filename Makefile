@@ -1,4 +1,4 @@
-.PHONY: build web test e2e dev-api dev-web dist smoke
+.PHONY: build web test e2e dev-api dev-web dist smoke icons
 
 build: web
 	go build -o bin/highlighter ./cmd/highlighter
@@ -29,3 +29,6 @@ smoke:
 	hdiutil attach -quiet -nobrowse -mountpoint dist/smoke/mnt $$(ls -t dist/Highlighter-*-macos-apple-silicon.dmg | head -1)
 	cp -R dist/smoke/mnt/Highlighter.app dist/smoke/ && hdiutil detach -quiet dist/smoke/mnt
 	scripts/smoke-test.sh dist/smoke/Highlighter.app
+
+icons:
+	scripts/icons.sh
