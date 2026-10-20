@@ -20,6 +20,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/krismp/highlighter/internal/combine"
 	"github.com/krismp/highlighter/internal/desktop"
 	"github.com/krismp/highlighter/internal/ffmpeg"
 	"github.com/krismp/highlighter/internal/job"
@@ -81,11 +82,15 @@ func main() {
 	health := &healthCache{status: status}
 	cutter := ffmpeg.Runner{Bin: cmp.Or(status.FFmpeg.Path, "ffmpeg"), CAFile: loc.File("cacert.pem")}
 	jobs := job.NewManager(resolver, cutter)
-	shutdown := shutdownOnce(jobs)
+	combiner := combine.NewManager(cutter)
+	shutdown := shutdownOnce(jobs, combiner)
 	handler := server.New(server.Deps{
 		Store:       st,
 		Jobs:        jobs,
+		Combiner:    combiner,
+		Media:       combine.Tool{Bin: cutter.Bin},
 		Resolver:    resolver,
+		QuickTitle:  ytdlp.Title,
 		Encoder:     encoder,
 		Health:      health.get,
 		UpdateYtDlp: health.afterUpdate(loc),
@@ -125,12 +130,14 @@ func main() {
 // shutdownOnce returns the single way the server stops: cancel all clip work
 // (killing yt-dlp and ffmpeg with their children, removing partial files),
 // wait briefly for it, then exit. Later calls wait for the first to finish.
-func shutdownOnce(jobs *job.Manager) func(reason string) {
+func shutdownOnce(jobs *job.Manager, combiner *combine.Manager) func(reason string) {
 	var once sync.Once
 	return func(reason string) {
 		once.Do(func() {
 			log.Printf("shutting down: %s", reason)
-			if !jobs.Shutdown(10 * time.Second) {
+			combined := make(chan bool, 1)
+			go func() { combined <- combiner.Shutdown(10 * time.Second) }()
+			if !jobs.Shutdown(10*time.Second) || !<-combined {
 				log.Println("some clip work did not stop within 10s; exiting anyway")
 			}
 			os.Exit(0)

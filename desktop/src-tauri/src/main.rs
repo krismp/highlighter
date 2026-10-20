@@ -1,6 +1,6 @@
 // Highlighter desktop app: runs the highlighter server (a Go sidecar bundled
 // next to this executable, with yt-dlp, ffmpeg and deno) and shows its web UI
-// in a native window.
+// in a native window. It also updates itself in place (see install_update).
 //
 // Nothing outlives the app. On exit the server is told to shut down (it stops
 // every yt-dlp/ffmpeg run with its child processes and removes partial files)
@@ -19,11 +19,13 @@ use std::sync::Mutex;
 use std::thread;
 use std::time::{Duration, Instant};
 
+use tauri::ipc::Channel;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::webview::NewWindowResponse;
-use tauri::{AppHandle, Manager, RunEvent, Url, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent, Wry};
+use tauri::{AppHandle, Manager, RunEvent, State, Url, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent, Wry};
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 use tauri_plugin_opener::OpenerExt;
+use tauri_plugin_updater::{Update, UpdaterExt};
 
 /// The server's usual port; another free port is used when it is taken.
 /// HIGHLIGHTER_PORT overrides it (smoke tests).
@@ -60,7 +62,10 @@ fn main() {
         }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(Server::default())
+        .manage(PendingUpdate::default())
+        .invoke_handler(tauri::generate_handler![check_update, install_update])
         .menu(app_menu)
         .on_menu_event(|app, event| {
             if event.id() == QUIT_MENU_ID && may_quit(app) {
@@ -92,6 +97,88 @@ fn main() {
         RunEvent::Exit => stop_server(app),
         _ => {}
     });
+}
+
+/// The update found by the last check, waiting for install_update.
+#[derive(Default)]
+struct PendingUpdate(Mutex<Option<Update>>);
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateInfo {
+    version: String,
+    current_version: String,
+    notes: Option<String>,
+    /// Release time, seconds since 1970.
+    date: Option<i64>,
+}
+
+/// Asks the release feed whether a newer version exists. None when this is the latest.
+#[tauri::command]
+async fn check_update(app: AppHandle, pending: State<'_, PendingUpdate>) -> Result<Option<UpdateInfo>, String> {
+    let handle = app.clone();
+    let update = app
+        .updater_builder()
+        // Windows runs the installer, then this process exits: stop the
+        // server first, so its files (and ffmpeg's) are free to replace.
+        .on_before_exit(move || {
+            QUIT_CONFIRMED.store(true, Ordering::SeqCst);
+            stop_server(&handle);
+        })
+        .build()
+        .map_err(|e| e.to_string())?
+        .check()
+        .await
+        .map_err(|e| e.to_string())?;
+    let info = update.as_ref().map(|u| UpdateInfo {
+        version: u.version.clone(),
+        current_version: u.current_version.clone(),
+        notes: u.body.clone(),
+        date: u.date.map(|d| d.unix_timestamp()),
+    });
+    *pending.0.lock().unwrap() = update;
+    Ok(info)
+}
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase", tag = "event")]
+enum DownloadEvent {
+    Progress { downloaded: u64, total: Option<u64> },
+    Installing,
+}
+
+/// Downloads the update found by check_update, verifies its signature,
+/// installs it over this copy of the app and restarts into it. Settings,
+/// sessions and clips are untouched.
+///
+/// macOS: the .app bundle is replaced, then the app restarts the usual way
+/// (the exit hook stops the server). Windows: the installer runs in passive
+/// mode over the existing install and starts the new version; the updater's
+/// before-exit hook stops the server first.
+#[tauri::command]
+async fn install_update(app: AppHandle, pending: State<'_, PendingUpdate>, on_event: Channel<DownloadEvent>) -> Result<(), String> {
+    let Some(update) = pending.0.lock().unwrap().take() else {
+        return Err("Check for updates first.".into());
+    };
+    let mut downloaded = 0u64;
+    let bytes = update
+        .download(
+            |chunk, total| {
+                downloaded += chunk as u64;
+                let _ = on_event.send(DownloadEvent::Progress { downloaded, total });
+            },
+            || {
+                let _ = on_event.send(DownloadEvent::Installing);
+            },
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+    QUIT_CONFIRMED.store(true, Ordering::SeqCst); // the user chose to update
+    if let Err(e) = update.install(bytes) {
+        QUIT_CONFIRMED.store(false, Ordering::SeqCst);
+        return Err(e.to_string());
+    }
+    app.restart();
 }
 
 const QUIT_MENU_ID: &str = "quit";

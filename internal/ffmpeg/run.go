@@ -49,6 +49,12 @@ func (r Runner) Concat(ctx context.Context, inputs []string, output string) erro
 	return os.Rename(part, output)
 }
 
+// Run runs ffmpeg with args, passing each stdout line (the -progress
+// output) to onLine, which may be nil.
+func (r Runner) Run(ctx context.Context, args []string, onLine func(string)) error {
+	return r.run(ctx, args, onLine)
+}
+
 func (r Runner) run(ctx context.Context, args []string, onLine func(string)) error {
 	cmd := proc.Command(ctx, r.Bin, args...)
 	var stderr bytes.Buffer

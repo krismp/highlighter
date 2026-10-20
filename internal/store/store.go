@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/krismp/highlighter/internal/clip"
+	"github.com/krismp/highlighter/internal/combine"
 	"github.com/krismp/highlighter/internal/desktop"
 )
 
@@ -24,15 +25,19 @@ var validID = regexp.MustCompile(`^[A-Za-z0-9_-]{11}$`)
 
 // Session is everything known about one video being clipped.
 type Session struct {
-	VideoID   string      `json:"videoId"`
-	URL       string      `json:"url"`
-	Title     string      `json:"title"`
-	Duration  float64     `json:"duration"`
-	Width     int         `json:"width"`
-	Height    int         `json:"height"`
-	LeadIn    float64     `json:"leadIn"`
-	Clips     []clip.Clip `json:"clips"`
-	UpdatedAt time.Time   `json:"updatedAt"`
+	VideoID  string      `json:"videoId"`
+	URL      string      `json:"url"`
+	Title    string      `json:"title"`
+	Duration float64     `json:"duration"`
+	Width    int         `json:"width"`
+	Height   int         `json:"height"`
+	LeadIn   float64     `json:"leadIn"`
+	Clips    []clip.Clip `json:"clips"`
+	// Resolving is set while yt-dlp is still fetching the duration and size
+	// (the page opens before that); ResolveError says why it failed.
+	Resolving    bool      `json:"resolving,omitempty"`
+	ResolveError string    `json:"resolveError,omitempty"`
+	UpdatedAt    time.Time `json:"updatedAt"`
 }
 
 type Settings struct {
@@ -164,6 +169,52 @@ func (s *Store) SaveSettings(st Settings) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return writeJSONFile(filepath.Join(s.dir, "settings.json"), st)
+}
+
+// CombineItem is one video lined up on the Combine page.
+type CombineItem struct {
+	ID    string        `json:"id"`
+	Path  string        `json:"path"`
+	Media combine.Media `json:"media"`
+}
+
+// CombineDraft is the Combine page's line-up and choices; it lasts until
+// the user starts a new combination.
+type CombineDraft struct {
+	Items      []CombineItem      `json:"items"`
+	Name       string             `json:"name"` // output file name without .mp4; empty means the default
+	Size       combine.Size       `json:"size"`
+	Transition combine.Transition `json:"transition"`
+}
+
+func (s *Store) LoadCombine() (CombineDraft, error) {
+	d := CombineDraft{Items: []CombineItem{}, Size: combine.SizeAuto, Transition: combine.TransitionCut}
+	data, err := os.ReadFile(filepath.Join(s.dir, "combine.json"))
+	if errors.Is(err, os.ErrNotExist) {
+		return d, nil
+	}
+	if err != nil {
+		return d, err
+	}
+	if err := json.Unmarshal(data, &d); err != nil {
+		return CombineDraft{Items: []CombineItem{}, Size: combine.SizeAuto, Transition: combine.TransitionCut}, fmt.Errorf("read combine list: %w", err)
+	}
+	if d.Items == nil {
+		d.Items = []CombineItem{}
+	}
+	if !d.Size.Valid() {
+		d.Size = combine.SizeAuto
+	}
+	if !d.Transition.Valid() {
+		d.Transition = combine.TransitionCut
+	}
+	return d, nil
+}
+
+func (s *Store) SaveCombine(d CombineDraft) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return writeJSONFile(filepath.Join(s.dir, "combine.json"), d)
 }
 
 // writeJSONFile writes atomically via a temp file + rename.

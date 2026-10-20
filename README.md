@@ -2,6 +2,8 @@
 
 Paste a YouTube URL, mark the start of each play, review each clip in the
 embedded player, and get one MP4 per play. The source aspect ratio is kept.
+**Combine** joins any videos (clips from different matches, phone videos,
+whole games) into one MP4, in the order you choose.
 
 ## Install
 
@@ -77,6 +79,26 @@ on systems without it the installer downloads it.
 - **Clips folder:** clips go to `Movies/Highlights` on macOS and
   `Videos\Highlights` on Windows. Change it in **Settings**.
 
+### Combining videos
+
+Click **Combine** at the top (or drop video files anywhere on the window).
+Add videos with **Add videos…**, by dropping them, or with one click from
+**From your highlights** (the newest clips in your clips folder). Drag the
+handle to change the order; the bar at the top shows the result and its total
+length. Pick a size (the first video's, 1080p, 720p, vertical or square;
+other shapes get black bars, never stretched or cropped) and whether to cut
+or fade between videos, then **Combine**. The result goes to
+`Highlights/Combined`; your videos aren't changed. Clips cut by highlighter
+are joined as they are, without re-encoding, in a few seconds.
+
+### Updating highlighter
+
+The app checks for a new version when it opens. When there is one, a bar at
+the top says so: **Update and restart** downloads it, checks its signature,
+installs it over the current app and opens it again. No uninstalling, and
+your clips, sessions and settings stay. **Settings → Updates** shows the
+version you have, the release notes and a **Check for updates** button.
+
 ### Updating yt-dlp
 
 YouTube changes often break older yt-dlp versions. If videos stop loading,
@@ -144,10 +166,25 @@ the results.
 
 Pushing a `v*` tag runs `.github/workflows/release.yml`: it builds all three
 installers, installs and smoke-tests each on a real Apple Silicon Mac, Intel
-Mac and Windows machine, and publishes the zips as a GitHub release. Creating
+Mac and Windows machine, and publishes the zips as a GitHub release, plus
+the in-app updater's files and `latest.json` (see below). Creating
 the release on GitHub instead (Releases → *Draft a new release* with a new
 `v*` tag) works too: the zips are attached to it when the run finishes, and
-the standard install notes are added if you left the description empty. The
-builds are not code-signed or notarized, hence the one-time "Open Anyway" /
+the standard install notes are added if you left the description empty. ### In-app updates
+
+The updater ([Tauri's](https://v2.tauri.app/plugin/updater/)) reads
+`https://github.com/krismp/highlighter/releases/latest/download/latest.json`
+and only installs files signed with the updater key, whose public half is in
+`desktop/src-tauri/tauri.conf.json`. CI signs with the private key from the
+`TAURI_SIGNING_PRIVATE_KEY` secret (and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`,
+empty if the key has no password); without it releases still build, but
+installed apps aren't offered them. Keep the private key safe: losing it means
+users must reinstall by hand once to get a build with a new public key.
+`scripts/package.sh` makes the update files when the key is in the
+environment, and `scripts/updater-manifest.sh` writes `latest.json`.
+
+### Signing
+
+The builds are not code-signed or notarized, hence the one-time "Open Anyway" /
 "Run anyway" steps above; signing needs an Apple Developer ID and a Windows
 code-signing certificate.

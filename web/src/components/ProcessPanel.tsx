@@ -40,6 +40,8 @@ export function ProcessPanel({ session, busy, onStarted }: { session: SessionVie
   const errors = session.issues.filter((i) => i.severity === "error").length;
   const reason =
     net.online === false ? "Cutting clips needs an internet connection."
+    : session.resolving ? "Getting the video's length from YouTube first…"
+    : session.resolveError ? "Couldn't get the video's details from YouTube. Try again at the top of the page."
     : n === 0 ? "Add at least one clip."
     : errors > 0 ? `Fix ${errors} error${errors > 1 ? "s" : ""} first.`
     : unapproved > 0 ? `Approve ${unapproved} more clip${unapproved > 1 ? "s" : ""} to continue.`

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -16,9 +17,11 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/krismp/highlighter/internal/clip"
+	"github.com/krismp/highlighter/internal/combine"
 	"github.com/krismp/highlighter/internal/desktop"
 	"github.com/krismp/highlighter/internal/ffmpeg"
 	"github.com/krismp/highlighter/internal/job"
@@ -29,9 +32,17 @@ import (
 )
 
 type Deps struct {
-	Store       *store.Store
-	Jobs        *job.Manager
-	Resolver    job.Resolver
+	Store    *store.Store
+	Jobs     *job.Manager
+	Combiner *combine.Manager
+	Media    MediaTool
+	Resolver job.Resolver
+	// QuickTitle looks up a video's title in well under a second (YouTube
+	// oEmbed), so opening a video need not wait for yt-dlp. Optional.
+	QuickTitle func(ctx context.Context, canonicalURL string) (string, error)
+	// ResolveWait is how long opening a video waits for yt-dlp before the page
+	// opens without the details, which then arrive in the background.
+	ResolveWait time.Duration
 	Encoder     ffmpeg.Encoder
 	Health      func(context.Context) tools.Status
 	UpdateYtDlp func(context.Context) (string, error)
@@ -45,10 +56,19 @@ type Deps struct {
 	Port        int // listen port; 0 accepts any port (tests)
 }
 
-type server struct{ Deps }
+type server struct {
+	Deps
+	thumbs *thumbCache
+
+	// editMu serialises read-modify-write of sessions, which the background
+	// resolve does while the user edits clips.
+	editMu      sync.Mutex
+	resolvingMu sync.Mutex
+	resolving   map[string]chan struct{} // closed when that video's resolve ends
+}
 
 func New(d Deps) http.Handler {
-	s := &server{d}
+	s := &server{Deps: d, thumbs: newThumbCache(), resolving: map[string]chan struct{}{}}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/ping", s.ping)
 	mux.HandleFunc("GET /api/health", s.health)
@@ -62,6 +82,7 @@ func New(d Deps) http.Handler {
 	mux.HandleFunc("POST /api/sessions", s.openVideo)
 	mux.HandleFunc("GET /api/sessions/{id}", s.getSession)
 	mux.HandleFunc("PUT /api/sessions/{id}", s.putSession)
+	mux.HandleFunc("POST /api/sessions/{id}/resolve", s.retryResolve)
 	mux.HandleFunc("POST /api/sessions/{id}/clips/parse", s.parseClips)
 	mux.HandleFunc("POST /api/sessions/{id}/process", s.process)
 	mux.HandleFunc("POST /api/sessions/{id}/retry/{clipId}", s.retry)
@@ -71,6 +92,22 @@ func New(d Deps) http.Handler {
 	mux.HandleFunc("POST /api/sessions/{id}/files/{name}/reveal", s.reveal)
 	mux.HandleFunc("POST /api/sessions/{id}/files/{name}/trash", s.trash)
 	mux.HandleFunc("DELETE /api/sessions/{id}", s.deleteSession)
+	mux.HandleFunc("GET /api/combine", s.getCombine)
+	mux.HandleFunc("PUT /api/combine", s.putCombine)
+	mux.HandleFunc("DELETE /api/combine", s.clearCombine)
+	mux.HandleFunc("POST /api/combine/items", s.addCombineItems)
+	mux.HandleFunc("GET /api/combine/items/{itemId}/file", s.combineItemFile)
+	mux.HandleFunc("GET /api/combine/items/{itemId}/thumb", s.combineItemThumb)
+	mux.HandleFunc("POST /api/combine/start", s.startCombine)
+	mux.HandleFunc("POST /api/combine/cancel", s.cancelCombine)
+	mux.HandleFunc("POST /api/combine/dismiss", s.dismissCombine)
+	mux.HandleFunc("GET /api/combine/events", s.combineEvents)
+	mux.HandleFunc("GET /api/combine/library", s.library)
+	mux.HandleFunc("GET /api/combine/library/thumb", s.libraryThumb)
+	mux.HandleFunc("GET /api/combine/result", s.combineResultFile)
+	mux.HandleFunc("POST /api/combine/result/reveal", s.revealCombineResult)
+	mux.HandleFunc("POST /api/combine/result/trash", s.trashCombineResult)
+	mux.HandleFunc("POST /api/combine/open-folder", s.openCombineFolder)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) { writeError(w, 404, "not found") })
 	mux.Handle("/", spa(d.UI))
 	return hostGuard(d.Port, mux)
@@ -170,8 +207,8 @@ func (s *server) ping(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]string{"app": "highlighter"})
 }
 
-// runningJobs lists the videos still being processed, so the desktop app can
-// warn before it closes and stops them.
+// runningJobs lists the videos still being processed (and a running
+// combine), so the desktop app can warn before it closes and stops them.
 func (s *server) runningJobs(w http.ResponseWriter, r *http.Request) {
 	type entry struct {
 		SessionID string `json:"sessionId"`
@@ -184,6 +221,9 @@ func (s *server) runningJobs(w http.ResponseWriter, r *http.Request) {
 			e.Title = sess.Title
 		}
 		out = append(out, e)
+	}
+	if v := s.Combiner.View(); v.Running {
+		out = append(out, entry{SessionID: "combine", Title: fmt.Sprintf("Combining %d videos into %s", v.Count, v.File)})
 	}
 	writeJSON(w, 200, map[string]any{"running": out})
 }
@@ -281,6 +321,10 @@ func (s *server) listSessions(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, out)
 }
 
+// openVideo opens a YouTube link: the existing session, or a new one that is
+// saved at once, with the title from QuickTitle. yt-dlp's slower lookup of
+// the duration and size runs in the background; the response waits for it
+// only briefly, so the page and its player show right away.
 func (s *server) openVideo(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		URL string `json:"url"`
@@ -293,26 +337,116 @@ func (s *server) openVideo(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, err.Error())
 		return
 	}
+	s.editMu.Lock()
 	sess, err := s.Store.LoadSession(id)
-	if err == nil {
-		if st, ok := s.settings(w); ok {
-			writeJSON(w, 200, buildView(sess, st.OutputRoot))
+	s.editMu.Unlock()
+	switch {
+	case err == nil:
+		if sess.Resolving {
+			s.resolveLater(sess) // interrupted last time (the app was closed)
 		}
-		return
-	}
-	if !errors.Is(err, store.ErrNotFound) {
+	case errors.Is(err, store.ErrNotFound):
+		title := ""
+		if s.QuickTitle != nil {
+			title, err = s.QuickTitle(r.Context(), canonical)
+			if errors.Is(err, ytdlp.ErrNoVideo) {
+				writeError(w, 404, err.Error())
+				return
+			}
+		}
+		sess = store.Session{VideoID: id, URL: canonical, Title: cmp.Or(title, "YouTube video "+id), Clips: []clip.Clip{}, Resolving: true}
+		s.editMu.Lock()
+		sess, err = s.Store.SaveSession(sess)
+		s.editMu.Unlock()
+		if err != nil {
+			writeError(w, 500, err.Error())
+			return
+		}
+		done := s.resolveLater(sess)
+		select {
+		case <-done:
+		case <-time.After(s.ResolveWait):
+		case <-r.Context().Done():
+		}
+	default:
 		writeError(w, 500, err.Error())
 		return
 	}
-	info, err := s.Resolver.Resolve(r.Context(), canonical)
-	if err != nil {
-		writeError(w, 502, err.Error())
+	s.getSessionByID(w, id)
+}
+
+// resolveLater fetches the session's duration and size with yt-dlp in the
+// background (once per video at a time) and saves them into the latest
+// version of the session. The returned channel closes when it is done.
+func (s *server) resolveLater(sess store.Session) <-chan struct{} {
+	s.resolvingMu.Lock()
+	defer s.resolvingMu.Unlock()
+	if done, ok := s.resolving[sess.VideoID]; ok {
+		return done
+	}
+	done := make(chan struct{})
+	s.resolving[sess.VideoID] = done
+	go func() {
+		defer func() {
+			s.resolvingMu.Lock()
+			delete(s.resolving, sess.VideoID)
+			s.resolvingMu.Unlock()
+			close(done)
+		}()
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		info, err := s.Resolver.Resolve(ctx, sess.URL)
+		s.editMu.Lock()
+		defer s.editMu.Unlock()
+		cur, loadErr := s.Store.LoadSession(sess.VideoID)
+		if loadErr != nil {
+			return // removed meanwhile
+		}
+		cur.Resolving = false
+		if err != nil {
+			cur.ResolveError = err.Error()
+		} else {
+			cur.ResolveError = ""
+			if cur.Title == "" || cur.Title == "YouTube video "+cur.VideoID {
+				cur.Title = cmp.Or(info.Title, cur.Title)
+			}
+			cur.Duration, cur.Width, cur.Height = info.Duration, info.Width, info.Height
+		}
+		if _, err := s.Store.SaveSession(cur); err != nil {
+			log.Printf("save details of %s: %v", sess.VideoID, err)
+		}
+	}()
+	return done
+}
+
+// retryResolve fetches the video's details again after a failure.
+func (s *server) retryResolve(w http.ResponseWriter, r *http.Request) {
+	s.editMu.Lock()
+	sess, ok := s.loadSession(w, r)
+	if !ok {
+		s.editMu.Unlock()
 		return
 	}
-	s.saveAndRespond(w, store.Session{
-		VideoID: id, URL: canonical, Title: info.Title, Duration: info.Duration,
-		Width: info.Width, Height: info.Height, Clips: []clip.Clip{},
-	}, nil)
+	sess.Resolving, sess.ResolveError = true, ""
+	sess, err := s.Store.SaveSession(sess)
+	s.editMu.Unlock()
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
+	s.resolveLater(sess)
+	s.getSessionByID(w, sess.VideoID)
+}
+
+func (s *server) getSessionByID(w http.ResponseWriter, id string) {
+	sess, err := s.Store.LoadSession(id)
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
+	if st, ok := s.settings(w); ok {
+		writeJSON(w, 200, buildView(sess, st.OutputRoot))
+	}
 }
 
 func (s *server) getSession(w http.ResponseWriter, r *http.Request) {
@@ -326,6 +460,8 @@ func (s *server) getSession(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) putSession(w http.ResponseWriter, r *http.Request) {
+	s.editMu.Lock()
+	defer s.editMu.Unlock()
 	sess, ok := s.loadSession(w, r)
 	if !ok {
 		return
@@ -347,6 +483,8 @@ func (s *server) putSession(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) parseClips(w http.ResponseWriter, r *http.Request) {
+	s.editMu.Lock()
+	defer s.editMu.Unlock()
 	sess, ok := s.loadSession(w, r)
 	if !ok {
 		return
@@ -391,6 +529,14 @@ func (s *server) process(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	v := buildView(sess, st.OutputRoot)
+	if sess.Resolving {
+		writeError(w, 409, "Still getting this video's details from YouTube. Try again in a moment.")
+		return
+	}
+	if sess.ResolveError != "" {
+		writeError(w, 409, "Couldn't get this video's details from YouTube: "+sess.ResolveError)
+		return
+	}
 	if !v.CanProcess {
 		writeError(w, 409, "approve every clip and fix errors before processing")
 		return
@@ -587,7 +733,9 @@ func (s *server) deleteSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 409, busyMessage)
 		return
 	}
+	s.editMu.Lock()
 	err := s.Store.DeleteSession(id)
+	s.editMu.Unlock()
 	switch {
 	case errors.Is(err, store.ErrNotFound):
 		writeError(w, 404, "session not found")

@@ -3,6 +3,11 @@
 # machine, and on a v* tag publishes the zipped installers as a GitHub
 # release. Branch pushes that touch the app (and manual runs) build and test
 # only; the zips are kept as workflow artifacts.
+#
+# In-app updates: with the TAURI_SIGNING_PRIVATE_KEY secret (and
+# TAURI_SIGNING_PRIVATE_KEY_PASSWORD, empty for an unprotected key) the builds
+# also make signed update files, and the release gets them plus latest.json,
+# which installed apps read to update themselves in place.
 name: release
 
 on:
@@ -59,10 +64,15 @@ jobs:
           key: ${{ matrix.target }}
       - run: go test ./...
       - run: scripts/package.sh ${{ matrix.target }} ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.target }}
-          path: dist/Highlighter-*.zip
+          path: |
+            dist/Highlighter-*.zip
+            dist/updater/
           if-no-files-found: error
           compression-level: 0
 
@@ -156,3 +166,18 @@ jobs:
           else
             gh release create "$tag" dist/Highlighter-*.zip --verify-tag --title "Highlighter $tag" --notes-file packaging/RELEASE_NOTES.md
           fi
+      # The in-app updater's files and feed. The app shows the release's own
+      # notes, unless they are just the standard install notes.
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag=$GITHUB_REF_NAME
+          if ! ls dist/updater/*.sig >/dev/null 2>&1; then
+            echo "::warning::No signed update files (is the TAURI_SIGNING_PRIVATE_KEY secret set?): installed apps won't be offered this release."
+            exit 0
+          fi
+          gh release view "$tag" --json body -q .body > notes.md
+          if cmp -s <(tr -d '\r' < notes.md | sed -e '$a\') <(sed -e '$a\' packaging/RELEASE_NOTES.md); then : > notes.md; fi
+          scripts/updater-manifest.sh "$tag" dist/updater notes.md > dist/updater/latest.json
+          cat dist/updater/latest.json
+          gh release upload "$tag" dist/updater/* --clobber

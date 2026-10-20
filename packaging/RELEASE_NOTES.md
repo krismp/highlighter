@@ -22,4 +22,8 @@ Highlighter is a desktop app with everything it needs built in (yt-dlp, ffmpeg, 
 2. Double-click `Highlighter-…-windows-x64-setup.exe`. If Windows shows "Windows protected your PC", click **More info → Run anyway**.
 3. Follow the installer (no administrator rights needed), then start **Highlighter** from the Start menu.
 
+## Already have Highlighter?
+
+No need to uninstall. If your Highlighter has **Settings → Updates**, it offers this version itself: click **Update and restart**. Otherwise install as above over the old one (on macOS choose **Replace**); your clips and settings stay.
+
 Highlighter opens in its own window; close it (or click **Quit**) to stop. Full instructions and troubleshooting: see the [README](https://github.com/krismp/highlighter#install).

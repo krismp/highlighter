@@ -13,10 +13,12 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"testing/fstest"
 	"time"
 
+	"github.com/krismp/highlighter/internal/combine"
 	"github.com/krismp/highlighter/internal/ffmpeg"
 	"github.com/krismp/highlighter/internal/job"
 	"github.com/krismp/highlighter/internal/store"
@@ -26,13 +28,31 @@ import (
 
 const vid = "jNQXAC9IVRw"
 
-type fakeResolver struct{ calls int }
+type fakeResolver struct {
+	calls   atomic.Int32
+	release chan struct{} // when set, Resolve waits for it
+	err     error
+}
 
 func (f *fakeResolver) Resolve(ctx context.Context, url string) (ytdlp.Info, error) {
-	f.calls++
+	f.calls.Add(1)
+	if f.release != nil {
+		<-f.release
+	}
+	if f.err != nil {
+		return ytdlp.Info{}, f.err
+	}
 	return ytdlp.Info{ID: vid, Title: "Me at the zoo", Duration: 19, Width: 320, Height: 240,
 		Video: ytdlp.Stream{URL: "https://v"}}, nil
 }
+
+// quickTitle stands in for the oEmbed lookup.
+type quickTitle struct {
+	title string
+	err   error
+}
+
+func (q *quickTitle) get(ctx context.Context, url string) (string, error) { return q.title, q.err }
 
 type fileCutter struct{}
 
@@ -46,7 +66,9 @@ func (fileCutter) Concat(ctx context.Context, inputs []string, output string) er
 type env struct {
 	srv      *httptest.Server
 	resolver *fakeResolver
+	quick    *quickTitle
 	jobs     *job.Manager
+	combiner *combine.Manager
 	out      string
 	cfg      string
 	revealed *[]string // paths passed to RevealPath
@@ -69,6 +91,7 @@ func newEnvWith(t *testing.T, cutter job.Cutter) *env {
 		t.Fatal(err)
 	}
 	res := &fakeResolver{}
+	quick := &quickTitle{err: errors.New("offline")}
 	jobs := job.NewManager(res, cutter)
 	jobs.Backoff = []time.Duration{0, 0}
 	n := 0
@@ -76,8 +99,10 @@ func newEnvWith(t *testing.T, cutter job.Cutter) *env {
 	trashed := &[]string{}
 	quit := make(chan struct{}, 1)
 	internet := new(error)
+	combiner := combine.NewManager(combineRunner{})
 	h := New(Deps{
-		Store: st, Jobs: jobs, Resolver: res, Encoder: ffmpeg.X264,
+		Store: st, Jobs: jobs, Resolver: res, Encoder: ffmpeg.X264, ResolveWait: time.Second, QuickTitle: quick.get,
+		Combiner: combiner, Media: fakeMedia{},
 		Health:      func(context.Context) tools.Status { return tools.Status{Encoder: "libx264"} },
 		UpdateYtDlp: func(context.Context) (string, error) { return "updated", nil },
 		OpenPath:    func(string) error { return nil },
@@ -93,7 +118,7 @@ func newEnvWith(t *testing.T, cutter job.Cutter) *env {
 	})
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
-	return &env{srv: srv, resolver: res, jobs: jobs, out: out, cfg: filepath.Join(dir, "config"), revealed: revealed, trashed: trashed, quit: quit, internet: internet}
+	return &env{srv: srv, resolver: res, quick: quick, jobs: jobs, combiner: combiner, out: out, cfg: filepath.Join(dir, "config"), revealed: revealed, trashed: trashed, quit: quit, internet: internet}
 }
 
 func (e *env) do(t *testing.T, method, path string, body any) (int, []byte) {
@@ -166,8 +191,8 @@ func TestOpenVideo(t *testing.T) {
 		t.Errorf("outputDir %q", v.OutputDir)
 	}
 	e.open(t)
-	if e.resolver.calls != 1 {
-		t.Errorf("resolver calls = %d; want 1 (existing session reused)", e.resolver.calls)
+	if n := e.resolver.calls.Load(); n != 1 {
+		t.Errorf("resolver calls = %d; want 1 (existing session reused)", n)
 	}
 	code, data := e.do(t, "GET", "/api/sessions", nil)
 	recent := decode[[]RecentSession](t, data)

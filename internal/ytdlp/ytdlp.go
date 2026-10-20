@@ -8,6 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"github.com/krismp/highlighter/internal/proc"
+	"io"
+	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
@@ -16,6 +18,7 @@ import (
 
 var (
 	ErrNotYouTube = errors.New("not a YouTube video URL")
+	ErrNoVideo    = errors.New("there is no YouTube video at this link; check it and try again")
 	ErrLive       = errors.New("live and upcoming streams are not supported")
 )
 
@@ -150,6 +153,40 @@ func (c Client) Resolve(ctx context.Context, url string) (Info, error) {
 		return Info{}, fmt.Errorf("yt-dlp: %s", lastLine(stderr.String(), err))
 	}
 	return ParseInfo(out)
+}
+
+// OEmbedURL is YouTube's public oEmbed endpoint, which answers in a fraction
+// of a second where yt-dlp needs several.
+var OEmbedURL = "https://www.youtube.com/oembed"
+
+// Title looks up a video's title through oEmbed, so a video can be shown
+// before yt-dlp has resolved it. ErrNoVideo means YouTube says the video does
+// not exist; any other error just means the title is not known yet.
+func Title(ctx context.Context, canonical string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, OEmbedURL+"?format=json&url="+url.QueryEscape(canonical), nil)
+	if err != nil {
+		return "", err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	switch {
+	case resp.StatusCode == http.StatusBadRequest || resp.StatusCode == http.StatusNotFound:
+		return "", ErrNoVideo
+	case resp.StatusCode != http.StatusOK: // private or not embeddable: yt-dlp will say more
+		return "", fmt.Errorf("oembed: %s", resp.Status)
+	}
+	var body struct {
+		Title string `json:"title"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&body); err != nil {
+		return "", fmt.Errorf("oembed: %w", err)
+	}
+	return strings.TrimSpace(body.Title), nil
 }
 
 func lastLine(s string, fallback error) string {
