@@ -106,7 +106,10 @@ jobs:
         run: |
           hdiutil attach -nobrowse -mountpoint /tmp/hl "$RUNNER_TEMP"/pkg/*/*.dmg
           cp -R /tmp/hl/Highlighter.app "$RUNNER_TEMP/"
-          hdiutil detach /tmp/hl
+          # Spotlight can still hold a freshly mounted volume ("Resource busy"):
+          # retry, then force, since the app has already been copied out.
+          for i in 1 2 3; do hdiutil detach /tmp/hl && break; sleep 3; done
+          [ ! -d /tmp/hl/Highlighter.app ] || hdiutil detach -force /tmp/hl
           scripts/smoke-test.sh "$RUNNER_TEMP/Highlighter.app"
       # A picture of the installer's first page, to review its look
       # (kept as the "windows-installer-screenshot" artifact).
