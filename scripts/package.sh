@@ -13,6 +13,11 @@
 # cross-compile installers). version must be semver (from a v* tag); without
 # it the version in desktop/src-tauri/tauri.conf.json is used.
 # Set SKIP_WEB=1 to reuse an existing web build.
+#
+# With TAURI_SIGNING_PRIVATE_KEY set (the updater key; CI has it as a secret)
+# the build also writes the in-app updater's files into dist/updater/: the
+# signed .app.tar.gz (macOS) or setup .exe (Windows) and its .sig, which the
+# release job lists in latest.json. Without the key they are skipped.
 set -euo pipefail
 
 target=${1:?usage: scripts/package.sh <macos-arm64|macos-amd64|windows-amd64> [version]}
@@ -131,7 +136,12 @@ cp "$cache/cacert.pem" "$tauri/resources/cacert.pem"
 pnpm --dir "$root/desktop" install --frozen-lockfile
 rustup target add "$triple" >/dev/null 2>&1 || true
 args=(build --target "$triple" --bundles "$bundle")
-[[ -n $version ]] && args+=(--config "{\"version\":\"$version\"}")
+config=()
+[[ -n $version ]] && config+=("\"version\":\"$version\"")
+[[ -z ${TAURI_SIGNING_PRIVATE_KEY:-} ]] && config+=('"bundle":{"createUpdaterArtifacts":false}')
+if (( ${#config[@]} )); then
+  args+=(--config "{$(IFS=,; echo "${config[*]}")}")
+fi
 pnpm --dir "$root/desktop" tauri "${args[@]}"
 
 out_dir="$tauri/target/$triple/release/bundle/$([[ $bundle == app ]] && echo macos || echo "$bundle")"
@@ -158,6 +168,19 @@ else
   cp "$(ls -t "$out_dir"/*-setup.exe | head -1)" "$pkg/$name-setup.exe"
   cp "$root/packaging/windows/INSTALL.txt" "$pkg/"
 fi
+# Updater files, named per platform so all three fit in one release.
+if [[ -n ${TAURI_SIGNING_PRIVATE_KEY:-} ]]; then
+  mkdir -p "$dist/updater"
+  if [[ $bundle == app ]]; then
+    cp "$out_dir/Highlighter.app.tar.gz" "$dist/updater/$name.app.tar.gz"
+    cp "$out_dir/Highlighter.app.tar.gz.sig" "$dist/updater/$name.app.tar.gz.sig"
+  else
+    setup=$(ls -t "$out_dir"/*-setup.exe | head -1)
+    cp "$setup" "$dist/updater/$name-setup.exe"
+    cp "$setup.sig" "$dist/updater/$name-setup.exe.sig"
+  fi
+fi
+
 out="$dist/$name.zip"
 rm -f "$out"
 if command -v zip >/dev/null; then

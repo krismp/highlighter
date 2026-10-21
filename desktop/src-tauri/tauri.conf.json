@@ -52,6 +52,18 @@
         "sidebarImage": "installer/nsis-sidebar.bmp",
         "displayLanguageSelector": false
       }
+    },
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDIwNzY0MTMzNDdCOENERUYKUldUdnpiaEhNMEYySUFUdTdqSE1reERJNy9SRithUUVTVG9YSFFUNzljYXgzQ2lna2liWXJXMzYK",
+      "endpoints": [
+        "https://github.com/krismp/highlighter/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
     }
   }
 }

@@ -29,7 +29,9 @@ type SessionView struct {
 	Issues       []clip.Issue `json:"issues"`
 	CanProcess   bool         `json:"canProcess"`
 	OutputDir    string       `json:"outputDir"`
-	ReelName     string       `json:"reelName"` // default combined-reel name, without .mp4
+	ReelName     string       `json:"reelName"`     // default combined-reel name, without .mp4
+	Resolving    bool         `json:"resolving"`    // still fetching the video's details
+	ResolveError string       `json:"resolveError"` // why fetching them failed
 }
 
 type RecentSession struct {
@@ -54,9 +56,10 @@ func buildView(s store.Session, outputRoot string) SessionView {
 		VideoID: s.VideoID, URL: s.URL, Title: s.Title,
 		Duration: s.Duration, DurationText: timecode.Format(s.Duration), LeadIn: s.LeadIn,
 		Clips: make([]ClipView, 0, len(s.Clips)), Issues: issues,
-		CanProcess: clip.CanProcess(s.Clips, issues),
-		OutputDir:  outputDir(outputRoot, s.Title),
-		ReelName:   clip.ReelName(s.Title),
+		CanProcess: clip.CanProcess(s.Clips, issues) && !s.Resolving && s.ResolveError == "",
+		Resolving:  s.Resolving, ResolveError: s.ResolveError,
+		OutputDir: outputDir(outputRoot, s.Title),
+		ReelName:  clip.ReelName(s.Title),
 	}
 	for i, c := range s.Clips {
 		r := clip.Effective(c, s.LeadIn, s.Duration)

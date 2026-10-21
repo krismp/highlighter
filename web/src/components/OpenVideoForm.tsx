@@ -1,5 +1,6 @@
 import { useMutation } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
+import { LoaderCircle } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,7 +23,7 @@ export function OpenVideoForm({ autoFocus = false, size = "default" }: { autoFoc
         <Input autoFocus={autoFocus} aria-label="YouTube video URL" placeholder="https://www.youtube.com/watch?v=…"
           className={size === "lg" ? "h-11 rounded-full px-5 text-base sm:border-0 sm:shadow-none sm:focus-visible:ring-0 md:text-base" : undefined}
           value={url} onChange={(e) => setUrl(e.target.value)} />
-        <Button type="submit" size={size === "lg" ? "lg" : "default"} className={size === "lg" ? "h-11 rounded-full px-6" : undefined} disabled={!url.trim() || open.isPending || net.online === false}>{open.isPending ? "Loading…" : "Open"}</Button>
+        <Button type="submit" size={size === "lg" ? "lg" : "default"} className={size === "lg" ? "h-11 rounded-full px-6" : undefined} disabled={!url.trim() || open.isPending || net.online === false}>{open.isPending ? <><LoaderCircle className="size-4 animate-spin" /> Opening…</> : "Open"}</Button>
       </form>
       {net.online === false && <p className="mt-2 text-sm text-muted-foreground">Opening a video needs an internet connection.</p>}
     </div>

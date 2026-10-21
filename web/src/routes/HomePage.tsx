@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { X } from "lucide-react";
+import { Film, X } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { ConfirmButton } from "@/components/ConfirmButton";
 import { OpenVideoForm } from "@/components/OpenVideoForm";
@@ -33,6 +33,14 @@ export function HomePage() {
         </div>
         <ToolsBanner />
       </div>
+
+      <Link to="/combine" className="group flex items-center gap-3 rounded-lg border bg-card px-4 py-3 transition-colors hover:border-court focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
+        <span className="grid size-10 shrink-0 place-items-center rounded-full bg-accent text-court"><Film className="size-5" /></span>
+        <span className="min-w-0">
+          <span className="block font-heading text-xl font-bold group-hover:text-court">Combine videos</span>
+          <span className="block text-sm text-muted-foreground">Join clips from different matches, or any videos, into one.</span>
+        </span>
+      </Link>
 
       {recent.data && recent.data.length > 0 && (
         <section aria-labelledby="recent-heading">

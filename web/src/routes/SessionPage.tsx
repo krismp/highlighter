@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "@tanstack/react-router";
-import { Plus, RotateCw, WifiOff } from "lucide-react";
+import { CircleAlert, LoaderCircle, Plus, RotateCw, WifiOff } from "lucide-react";
 import { useEffect, useState } from "react";
 import { AddClips } from "@/components/AddClips";
 import { ClipRow } from "@/components/ClipRow";
@@ -44,6 +44,21 @@ function Session({ videoId }: { videoId: string }) {
     },
     onSuccess: setSession,
   });
+  // The page opens before yt-dlp has the video's length: check back until it
+  // has, and take the new details only while no edit is being saved (the
+  // save's own response carries them otherwise).
+  const details = useQuery({
+    queryKey: ["session-details", videoId],
+    queryFn: () => api.session(videoId),
+    enabled: session.data?.resolving === true,
+    refetchInterval: 1000,
+    gcTime: 0,
+    meta: { inline: true },
+  });
+  useEffect(() => {
+    if (details.data && !details.data.resolving && qc.isMutating() === 0) qc.setQueryData(["session", videoId], details.data);
+  }, [details.data, qc, videoId]);
+  const retryResolve = useMutation({ meta: { errorTitle: "Couldn't fetch the video's details" }, mutationFn: () => api.retryResolve(videoId), onSuccess: (v) => qc.setQueryData(["session", videoId], v) });
   const settings = useQuery({ queryKey: ["settings"], queryFn: api.settings, meta: { errorTitle: "Couldn't load settings" } });
   const defaultLength = settings.data?.defaultDuration ?? 10;
   const [lengthInput, setLengthInput] = useState("");
@@ -97,9 +112,27 @@ function Session({ videoId }: { videoId: string }) {
       <section className="grid content-start gap-4 lg:sticky lg:top-4 lg:self-start">
         <div>
           <h1 className="font-heading text-3xl leading-tight font-bold text-balance" title={s.title}>{s.title}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {s.durationText} long. Clips are saved to <span className="break-all text-foreground">{s.outputDir}</span>
-          </p>
+          {s.resolving ? (
+            <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground" role="status">
+              <LoaderCircle className="size-3.5 shrink-0 animate-spin text-court" aria-hidden />
+              Getting the video's length from YouTube. Watch and mark plays meanwhile.
+            </p>
+          ) : s.resolveError ? (
+            <div role="alert" className="mt-2 flex flex-wrap items-start gap-2 rounded-md border border-destructive/40 bg-destructive/5 p-2.5 text-sm">
+              <CircleAlert className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden />
+              <div className="min-w-0 flex-1">
+                <p className="font-medium">Couldn't get this video's details from YouTube, so clips can't be cut yet.</p>
+                <p className="mt-0.5 text-xs break-words text-muted-foreground select-text">{s.resolveError}</p>
+              </div>
+              <Button size="sm" variant="outline" disabled={retryResolve.isPending} onClick={() => retryResolve.mutate()}>
+                <RotateCw className={retryResolve.isPending ? "size-3.5 animate-spin" : "size-3.5"} /> Try again
+              </Button>
+            </div>
+          ) : (
+            <p className="mt-1 text-sm text-muted-foreground">
+              {s.durationText} long. Clips are saved to <span className="break-all text-foreground">{s.outputDir}</span>
+            </p>
+          )}
         </div>
 
         <div className="overflow-hidden rounded-lg bg-board shadow-lg">

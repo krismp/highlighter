@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/krismp/highlighter/internal/clip"
+	"github.com/krismp/highlighter/internal/combine"
 )
 
 func newStore(t *testing.T) *Store {
@@ -120,5 +121,25 @@ func TestDeleteSession(t *testing.T) {
 	}
 	if err := s.DeleteSession("../etc"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("bad id: %v", err)
+	}
+}
+
+func TestCombineDraft(t *testing.T) {
+	s, err := New(t.TempDir(), DefaultSettings("/videos"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, err := s.LoadCombine()
+	if err != nil || len(d.Items) != 0 || d.Items == nil || d.Size != combine.SizeAuto || d.Transition != combine.TransitionCut {
+		t.Fatalf("empty draft: %+v %v", d, err)
+	}
+	d.Items = append(d.Items, CombineItem{ID: "a1", Path: "/v/a.mp4", Media: combine.Media{Duration: 3}})
+	d.Name, d.Size, d.Transition = "Finals", combine.SizeVertical, combine.TransitionFade
+	if err := s.SaveCombine(d); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.LoadCombine()
+	if err != nil || len(got.Items) != 1 || got.Items[0].Media.Duration != 3 || got.Name != "Finals" || got.Size != combine.SizeVertical || got.Transition != combine.TransitionFade {
+		t.Fatalf("round trip: %+v %v", got, err)
 	}
 }

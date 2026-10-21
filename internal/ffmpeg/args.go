@@ -40,7 +40,7 @@ func CutArgs(s CutSpec) []string {
 	} else {
 		args = append(args, "-map", "0:a:0?")
 	}
-	args = append(args, encoderArgs(s.Encoder)...)
+	args = append(args, EncoderArgs(s.Encoder)...)
 	return append(args, "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "160k",
 		"-movflags", "+faststart", "-f", "mp4", s.Output)
 }
@@ -70,7 +70,8 @@ func headerBlob(h map[string]string) string {
 	return b.String()
 }
 
-func encoderArgs(e Encoder) []string {
+// EncoderArgs are the video encoder flags shared by every encode.
+func EncoderArgs(e Encoder) []string {
 	if e == VideoToolbox {
 		return []string{"-c:v", string(VideoToolbox), "-b:v", "8M", "-maxrate", "12M", "-bufsize", "16M"}
 	}
