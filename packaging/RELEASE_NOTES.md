@@ -1,22 +1,18 @@
-## What's new in 1.2.0
+## What's new in 1.3.0
 
-### Paste exact time ranges
-You can now paste a start **and** end time, and Highlighter cuts exactly that part of the video. You no longer need to adjust each clip's length by hand.
+### Get back to any video from anywhere
+A new **Videos** button sits in the top bar on every page. Click it to see your recent videos and jump straight back into one, even from Combine or Settings.
 
-```
-PLAY + AST: 2:22 - 3:02
-PLAY: 3:55 - 4:26
-10:45 - 11:15 fast break
-```
+- An orange badge on the button shows how many videos are still unfinished. While a video is being processed, the badge shows a spinner.
+- Each video shows its status: **draft** (still needs work), **processing**, or **done**. Recent videos on the Home page show the same status.
+- A video counts as done once it has been processed and nothing changed since. Editing a clip's start, length or label afterwards makes it a draft again; ticking **Looks good** doesn't.
 
-- The label can go before or after the times: `PLAY: 3:55 - 4:26` and `3:55 - 4:26 PLAY` both work.
-- Separate the two times with `-`, `–`, `~` or `to`.
-- A single time still works as before and gets your default clip length, for example `12:34 dunk` or `STEAL: 12:34`.
-- Numbers inside a label are never mistaken for times. `Player 5 - 1:10` is the play "Player 5" at 1:10.
-- If a line can't be read, such as `7:40 - 7:60` or an end time before its start, it stays in the box with an explanation so you can fix it.
+### Your pasted times are kept
+Text in the paste box is now saved as you type. If you leave the page before clicking **Add clips**, it's still there when you come back.
 
-### Longer clips
-A clip can now be up to **10 minutes** long (previously 2 minutes), so a long possession or a whole sequence fits in one clip. The default length for a single pasted time is still capped at 2 minutes.
+### Smaller improvements
+- **Full reel** and **Both** now show how long the joined video will be.
+- The **Length** box fits longer clips like `210` seconds, and shows the time in minutes (`3:30`) once a clip is over a minute.
 
 ## Download
 
