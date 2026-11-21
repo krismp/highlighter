@@ -102,3 +102,28 @@ func TestParseListRanges(t *testing.T) {
 		t.Errorf("errs = %+v; want one error for line 8", errs)
 	}
 }
+
+// The user's real-world range format: the label comes first.
+func TestParseListLabelFirst(t *testing.T) {
+	text := "PLAY + AST: 2:22 - 3:02\n" +
+		"PLAY: 3:55 - 4:26\n" +
+		"Q2 3PT - 10:45 – 11:15\n" +
+		"STEAL: 12:05\n" +
+		"Player 5 - 1:10\n" + // "5" has no colon, so it stays in the label
+		"Game 7\n" + // a bare trailing number is not a time
+		"PLAY: 7:40 - 7:60\n" // 60 seconds is invalid
+	entries, errs := ParseList(text)
+	want := []Entry{
+		{Start: 142, Duration: 40, Label: "PLAY + AST"},
+		{Start: 235, Duration: 31, Label: "PLAY"},
+		{Start: 645, Duration: 30, Label: "Q2 3PT"},
+		{Start: 725, Label: "STEAL"},
+		{Start: 70, Label: "Player 5"},
+	}
+	if !reflect.DeepEqual(entries, want) {
+		t.Errorf("entries = %+v\nwant      %+v", entries, want)
+	}
+	if len(errs) != 2 || errs[0].Line != 6 || errs[1].Line != 7 {
+		t.Errorf("errs = %+v; want errors for lines 6 and 7", errs)
+	}
+}

@@ -52,11 +52,22 @@ type Entry struct {
 	Label    string
 }
 
-// rangePattern matches "2:22 - 3:02 [label]". The end must contain a colon so
-// "1:23 - 45 points" still reads as a start time followed by a label.
-var rangePattern = regexp.MustCompile(
-	`^(\d{1,6}(?::\d{1,2}){0,2}(?:\.\d+)?)\s*(?:-|–|—|~|\s+to\s+)\s*` +
-		`(\d{1,6}(?::\d{1,2}){1,2}(?:\.\d+)?)(?:$|[\s|,;:\-–—]+(.*)$)`)
+const (
+	stamp      = `\d{1,6}(?::\d{1,2}){0,2}(?:\.\d+)?`
+	colonStamp = `\d{1,6}(?::\d{1,2}){1,2}(?:\.\d+)?` // "1:23", never a bare "45"
+	rangeSep   = `\s*(?:-|–|—|~|\s+to\s+)\s*`
+	labelSep   = `[\s|,;:\-–—]+`
+)
+
+var (
+	// "2:22 - 3:02 [label]". The end needs a colon so "1:23 - 45 points"
+	// still reads as a start time followed by a label.
+	rangeFirst = regexp.MustCompile(`^(` + stamp + `)` + rangeSep + `(` + colonStamp + `)(?:$|` + labelSep + `(.*)$)`)
+	// "PLAY + AST: 2:22 - 3:02" and "STEAL: 12:05". Both times need a colon so
+	// numbers inside a label ("Player 5", "Game 7") are never read as times.
+	rangeLast = regexp.MustCompile(`^(.+?)` + labelSep + `(` + colonStamp + `)` + rangeSep + `(` + colonStamp + `)$`)
+	stampLast = regexp.MustCompile(`^(.+?)` + labelSep + `(` + colonStamp + `)$`)
+)
 
 // LineError reports a line of a pasted list that could not be parsed.
 type LineError struct {
@@ -67,7 +78,8 @@ type LineError struct {
 
 const labelTrim = " \t-–—|:,;"
 
-// ParseList parses one "<timestamp> [label]" or "<start> - <end> [label]" per line. A line made only of
+// ParseList parses one play per line: "<time> [label]", "<start> - <end> [label]",
+// "<label>: <time>" or "<label>: <start> - <end>". A range sets the clip length. A line made only of
 // timestamps separated by commas, semicolons or spaces yields one entry each.
 func ParseList(text string) ([]Entry, []LineError) {
 	entries := []Entry{}
@@ -77,14 +89,12 @@ func ParseList(text string) ([]Entry, []LineError) {
 		if line == "" {
 			continue
 		}
-		if m := rangePattern.FindStringSubmatch(line); m != nil {
-			e, err := parseRange(m[1], m[2])
+		if e, err, ok := parseLabelled(line); ok {
 			if err != nil {
 				errs = append(errs, LineError{Line: i + 1, Text: line, Err: err.Error()})
-				continue
+			} else {
+				entries = append(entries, e)
 			}
-			e.Label = strings.Trim(m[3], labelTrim)
-			entries = append(entries, e)
 			continue
 		}
 		if starts := allTimestamps(line); starts != nil {
@@ -105,6 +115,30 @@ func ParseList(text string) ([]Entry, []LineError) {
 		entries = append(entries, Entry{Start: start, Label: strings.Trim(rest, labelTrim)})
 	}
 	return entries, errs
+}
+
+// parseLabelled handles ranges (label after or before) and "label: time"
+// lines. ok is false when the line has none of those shapes.
+func parseLabelled(line string) (e Entry, err error, ok bool) {
+	if m := rangeFirst.FindStringSubmatch(line); m != nil {
+		e, err = parseRange(m[1], m[2])
+		e.Label = strings.Trim(m[3], labelTrim)
+		return e, err, true
+	}
+	if _, perr := Parse(strings.TrimRight(strings.Fields(line)[0], labelTrim)); perr == nil {
+		return Entry{}, nil, false // starts with a time: "<time> [label]" or a list of times
+	}
+	if m := rangeLast.FindStringSubmatch(line); m != nil {
+		e, err = parseRange(m[2], m[3])
+		e.Label = strings.Trim(m[1], labelTrim)
+		return e, err, true
+	}
+	if m := stampLast.FindStringSubmatch(line); m != nil {
+		e.Start, err = Parse(m[2])
+		e.Label = strings.Trim(m[1], labelTrim)
+		return e, err, true
+	}
+	return Entry{}, nil, false
 }
 
 func parseRange(from, to string) (Entry, error) {

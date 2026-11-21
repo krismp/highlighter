@@ -36,13 +36,20 @@ func severities(issues []Issue, id string) []Severity {
 	return out
 }
 
+func TestValidateTooLong(t *testing.T) {
+	issues := Validate([]Clip{{ID: "a", Duration: MaxDuration + 1}}, 0, 0)
+	if got := severities(issues, "a"); !reflect.DeepEqual(got, []Severity{SeverityError}) {
+		t.Errorf("severities = %v; want [error]", got)
+	}
+}
+
 func TestValidate(t *testing.T) {
 	clips := []Clip{
 		{ID: "a", Start: 10, Duration: 10},   // fine
 		{ID: "b", Start: 15, Duration: 10},   // overlaps a
 		{ID: "c", Start: 15, Duration: 10},   // same start as b
 		{ID: "d", Start: 100, Duration: 0.5}, // too short
-		{ID: "e", Start: 200, Duration: 121}, // too long
+		{ID: "e", Start: 200, Duration: 300}, // long, but allowed
 		{ID: "f", Start: 595, Duration: 10},  // trimmed at end
 		{ID: "g", Start: 600, Duration: 10},  // starts at end
 	}
@@ -52,7 +59,7 @@ func TestValidate(t *testing.T) {
 		"b": {SeverityWarning},
 		"c": {SeverityWarning},
 		"d": {SeverityError},
-		"e": {SeverityError},
+		"e": {},
 		"f": {SeverityWarning},
 		"g": {SeverityError},
 	}

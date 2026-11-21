@@ -6,7 +6,7 @@ import type { ClipInput, ClipView, Issue } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 const MIN = 1;
-const MAX = 120;
+const MAX = 600; // clips set by a range can be long; the default length stays ≤ 120 s
 const clampDuration = (d: number) => Math.min(MAX, Math.max(MIN, Math.round(d * 10) / 10));
 
 interface Props {

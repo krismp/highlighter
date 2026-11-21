@@ -14,7 +14,8 @@ import (
 const (
 	DefaultDuration = 10.0
 	MinDuration     = 1.0
-	MaxDuration     = 120.0
+	MaxDuration     = 600.0 // a clip set by a range or edited by hand
+	MaxDefault      = 120.0 // the default length given to a pasted start time
 	MaxLeadIn       = 30.0
 )
 

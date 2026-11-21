@@ -234,6 +234,22 @@ func TestParseClipsRangeSetsDuration(t *testing.T) {
 	}
 }
 
+// A range may run past the 120 s cap on the default length.
+func TestLongRangeIsAllowed(t *testing.T) {
+	e := newEnv(t)
+	e.open(t)
+	r := e.addClips(t, "PLAY: 0:00 - 3:30")
+	c := r.Session.Clips
+	if len(c) != 1 || c[0].Duration != 210 || c[0].Label != "PLAY" {
+		t.Fatalf("clips %+v", c)
+	}
+	for _, is := range r.Session.Issues {
+		if is.Severity == "error" && strings.Contains(is.Message, "duration") {
+			t.Errorf("unexpected duration error %+v", is)
+		}
+	}
+}
+
 func TestApprovalResetsOnTimingChange(t *testing.T) {
 	e := newEnv(t)
 	e.open(t)

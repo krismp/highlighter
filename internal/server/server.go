@@ -297,8 +297,8 @@ func (s *server) putSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	st.DefaultDuration = cmp.Or(st.DefaultDuration, clip.DefaultDuration)
-	if st.DefaultDuration < clip.MinDuration || st.DefaultDuration > clip.MaxDuration {
-		writeError(w, 400, fmt.Sprintf("default clip length must be between %gs and %gs", clip.MinDuration, clip.MaxDuration))
+	if st.DefaultDuration < clip.MinDuration || st.DefaultDuration > clip.MaxDefault {
+		writeError(w, 400, fmt.Sprintf("default clip length must be between %gs and %gs", clip.MinDuration, clip.MaxDefault))
 		return
 	}
 	if err := s.Store.SaveSettings(st); err != nil {
