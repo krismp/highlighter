@@ -221,6 +221,19 @@ func TestParseClips(t *testing.T) {
 	}
 }
 
+func TestParseClipsRangeSetsDuration(t *testing.T) {
+	e := newEnv(t)
+	e.open(t)
+	r := e.addClips(t, "0:03 - 0:15 dunk\n0:15 - 0:03")
+	if len(r.Errors) != 1 || r.Errors[0].Line != 2 {
+		t.Errorf("errors %+v", r.Errors)
+	}
+	c := r.Session.Clips
+	if len(c) != 1 || c[0].Start != 3 || c[0].Duration != 12 || c[0].Label != "dunk" {
+		t.Fatalf("clips %+v", c)
+	}
+}
+
 func TestApprovalResetsOnTimingChange(t *testing.T) {
 	e := newEnv(t)
 	e.open(t)

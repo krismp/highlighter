@@ -21,7 +21,7 @@ export function AddClips({ videoId, onAdded }: { videoId: string; onAdded: (s: S
     <div className="grid gap-2">
       <Textarea
         rows={5}
-        placeholder={"Paste start times, one per line:\n12:34 Andi crossover\n15:02\n1:02:03 buzzer beater"}
+        placeholder={"Paste start times or ranges, one per line:\n12:34 Andi crossover\n2:22 - 3:02 full possession\n1:02:03 buzzer beater"}
         value={text}
         onChange={(e) => setText(e.target.value)}
         className="font-mono text-sm"

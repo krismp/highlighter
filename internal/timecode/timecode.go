@@ -44,11 +44,19 @@ func Format(sec float64) string {
 	return fmt.Sprintf("%d:%02d", m, s)
 }
 
-// Entry is one parsed line of a pasted timestamp list.
+// Entry is one parsed line of a pasted timestamp list. Duration is set only
+// when the line gave a "start - end" range; 0 means "use the default length".
 type Entry struct {
-	Start float64
-	Label string
+	Start    float64
+	Duration float64
+	Label    string
 }
+
+// rangePattern matches "2:22 - 3:02 [label]". The end must contain a colon so
+// "1:23 - 45 points" still reads as a start time followed by a label.
+var rangePattern = regexp.MustCompile(
+	`^(\d{1,6}(?::\d{1,2}){0,2}(?:\.\d+)?)\s*(?:-|–|—|~|\s+to\s+)\s*` +
+		`(\d{1,6}(?::\d{1,2}){1,2}(?:\.\d+)?)(?:$|[\s|,;:\-–—]+(.*)$)`)
 
 // LineError reports a line of a pasted list that could not be parsed.
 type LineError struct {
@@ -59,7 +67,7 @@ type LineError struct {
 
 const labelTrim = " \t-–—|:,;"
 
-// ParseList parses one "<timestamp> [label]" per line. A line made only of
+// ParseList parses one "<timestamp> [label]" or "<start> - <end> [label]" per line. A line made only of
 // timestamps separated by commas, semicolons or spaces yields one entry each.
 func ParseList(text string) ([]Entry, []LineError) {
 	entries := []Entry{}
@@ -67,6 +75,16 @@ func ParseList(text string) ([]Entry, []LineError) {
 	for i, line := range strings.Split(text, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
+			continue
+		}
+		if m := rangePattern.FindStringSubmatch(line); m != nil {
+			e, err := parseRange(m[1], m[2])
+			if err != nil {
+				errs = append(errs, LineError{Line: i + 1, Text: line, Err: err.Error()})
+				continue
+			}
+			e.Label = strings.Trim(m[3], labelTrim)
+			entries = append(entries, e)
 			continue
 		}
 		if starts := allTimestamps(line); starts != nil {
@@ -87,6 +105,21 @@ func ParseList(text string) ([]Entry, []LineError) {
 		entries = append(entries, Entry{Start: start, Label: strings.Trim(rest, labelTrim)})
 	}
 	return entries, errs
+}
+
+func parseRange(from, to string) (Entry, error) {
+	start, err := Parse(from)
+	if err != nil {
+		return Entry{}, err
+	}
+	end, err := Parse(to)
+	if err != nil {
+		return Entry{}, err
+	}
+	if end <= start {
+		return Entry{}, fmt.Errorf("range end %s must be after its start %s", to, from)
+	}
+	return Entry{Start: start, Duration: end - start}, nil
 }
 
 func allTimestamps(line string) []float64 {

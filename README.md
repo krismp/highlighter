@@ -76,6 +76,9 @@ on systems without it the installer downloads it.
   next to a clip or the reel removes that file; restore it from the Trash
   if you change your mind. The **×** next to a recent video removes it from
   the list (its marked start times); its clip files stay saved.
+- **Pasting plays:** paste one play per line. A start time (`12:34 dunk`)
+  gets the default clip length; a range (`2:22 - 3:02 dunk`) selects exactly
+  that part of the video, here the 40 seconds from 2:22 to 3:02.
 - **Clips folder:** clips go to `Movies/Highlights` on macOS and
   `Videos\Highlights` on Windows. Change it in **Settings**.
 

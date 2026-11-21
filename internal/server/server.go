@@ -502,7 +502,11 @@ func (s *server) parseClips(w http.ResponseWriter, r *http.Request) {
 	entries, lineErrs := timecode.ParseList(body.Text)
 	incoming := slices.Clone(sess.Clips)
 	for _, e := range entries {
-		incoming = append(incoming, clip.Clip{ID: s.NewID(), Start: e.Start, Duration: st.DefaultDuration, Label: e.Label})
+		dur := st.DefaultDuration
+		if e.Duration > 0 { // "2:22 - 3:02" picks its own length
+			dur = e.Duration
+		}
+		incoming = append(incoming, clip.Clip{ID: s.NewID(), Start: e.Start, Duration: dur, Label: e.Label})
 	}
 	sess.Clips = clip.Reconcile(sess.Clips, incoming, false, s.NewID)
 	s.saveAndRespond(w, sess, func(v SessionView) any { return parseResponse{Session: v, Errors: lineErrs} })
