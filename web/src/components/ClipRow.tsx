@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { ClipInput, ClipView, Issue } from "@/lib/api";
+import { clock } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 const MIN = 1;
@@ -87,7 +88,8 @@ export function ClipRow({ clip, issues, playerReady, previewing, playhead, range
         >
           <span className={cn("text-xs", live ? "text-white/60" : "text-muted-foreground")}>Length</span>
           <input
-            className={cn("score w-12 bg-transparent text-right text-lg font-semibold outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none", live && "text-white")}
+            style={{ width: `${Math.max(3, duration.length) + 1}ch` }} // "210" or "40.5" from a pasted range must fit
+            className={cn("score bg-transparent text-right text-lg font-semibold outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none", live && "text-white")}
             type="number" step="0.5" min={MIN} max={MAX} inputMode="decimal"
             aria-label="Clip length in seconds"
             value={duration}
@@ -96,6 +98,9 @@ export function ClipRow({ clip, issues, playerReady, previewing, playhead, range
             onKeyDown={(e) => e.key === "Enter" && commitDuration()}
           />
           <span className={cn("text-sm", live ? "text-white/60" : "text-muted-foreground")}>s</span>
+          {clip.duration >= 60 && (
+            <span className={cn("score text-sm", live ? "text-white/60" : "text-muted-foreground")}>· {clock(clip.duration)}</span>
+          )}
         </label>
         <div className="flex items-center gap-1" role="group" aria-label="Adjust length">
           {[-2, -1, 1, 2, 5].map((d) => (

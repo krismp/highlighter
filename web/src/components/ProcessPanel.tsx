@@ -13,10 +13,11 @@ import { reportError } from "@/lib/errors";
 import { bytes, length } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-const modes: { value: OutputMode; title: string; detail: (n: number) => string }[] = [
+/** n is the clip count, reel the joined video's length ("2:18"). */
+const modes: { value: OutputMode; title: string; detail: (n: number, reel: string) => string }[] = [
   { value: "clips", title: "Every clip", detail: (n) => `${n} separate file${n === 1 ? "" : "s"}` },
-  { value: "reel", title: "Full reel", detail: () => "one file, clips in order" },
-  { value: "both", title: "Both", detail: (n) => `${n} clip${n === 1 ? "" : "s"} plus the reel` },
+  { value: "reel", title: "Full reel", detail: (_, reel) => `one ${reel} file, clips in order` },
+  { value: "both", title: "Both", detail: (n, reel) => `${n} clip${n === 1 ? "" : "s"} plus the ${reel} reel` },
 ];
 
 /** Choose what to save and start the run. Shown under the clip list while editing. */
@@ -36,6 +37,8 @@ export function ProcessPanel({ session, busy, onStarted }: { session: SessionVie
   });
 
   const n = session.clips.length;
+  // What is actually cut: lead-in included, trimmed at the video's end.
+  const reel = length(session.clips.reduce((sum, c) => sum + c.effDuration, 0));
   const unapproved = session.clips.filter((c) => !c.approved).length;
   const errors = session.issues.filter((i) => i.severity === "error").length;
   const reason =
@@ -65,7 +68,7 @@ export function ProcessPanel({ session, busy, onStarted }: { session: SessionVie
           >
             <input type="radio" name="mode" value={m.value} checked={mode === m.value} onChange={() => setMode(m.value)} className="sr-only" />
             <span className={cn("block font-semibold", mode === m.value && "text-accent-foreground")}>{m.title}</span>
-            <span className="block text-xs text-muted-foreground">{m.detail(n)}</span>
+            <span className="block text-xs text-muted-foreground">{m.detail(n, reel)}</span>
           </label>
         ))}
       </fieldset>
