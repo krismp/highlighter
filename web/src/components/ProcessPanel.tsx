@@ -32,6 +32,7 @@ export function ProcessPanel({ session, busy, onStarted }: { session: SessionVie
     mutationFn: () => api.process(id, mode, reelName),
     onSuccess: (v: JobView) => {
       qc.setQueryData(["job", id], v);
+      void qc.invalidateQueries({ queryKey: ["recent"] });
       onStarted();
     },
   });

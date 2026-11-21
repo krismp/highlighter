@@ -1,6 +1,7 @@
 import { createRootRoute, createRoute, createRouter, Link, Outlet } from "@tanstack/react-router";
 import { DropOverlay } from "@/components/DropOverlay";
 import { OfflineBanner } from "@/components/OfflineBanner";
+import { VideosMenu } from "@/components/VideosMenu";
 import { QuitButton } from "@/components/QuitButton";
 import { UpdateBanner } from "@/components/Updates";
 import { CombinePage } from "@/routes/CombinePage";
@@ -19,7 +20,8 @@ const rootRoute = createRootRoute({
             <span className="font-heading text-xl font-bold">highlighter</span>
           </Link>
           <span className="hidden text-sm text-white/60 sm:inline">Cut every play out of a match</span>
-          <Link to="/combine" className="ml-auto flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm text-white/70 hover:bg-white/10 hover:text-white [&.active]:bg-white/10 [&.active]:text-white" title="Join videos into one">
+          <div className="ml-auto"><VideosMenu /></div>
+          <Link to="/combine" className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm text-white/70 hover:bg-white/10 hover:text-white [&.active]:bg-white/10 [&.active]:text-white" title="Join videos into one">
             <Film className="size-3.5" /> Combine
           </Link>
           <Link to="/settings" className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm text-white/70 hover:bg-white/10 hover:text-white [&.active]:text-white" title="Settings">

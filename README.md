@@ -70,6 +70,10 @@ on systems without it the installer downloads it.
   stops highlighter completely; nothing keeps running in the background. If a
   video is still being processed, highlighter asks before quitting.
   Finished clips stay saved; unfinished ones are not saved.
+- **Videos menu:** **Videos** in the header lists your recent videos. The badge
+  counts the ones you haven't finished (still processing, or with clips or
+  pasted times waiting); the paste box keeps what you type as a draft, so you
+  can leave and pick up where you left off.
 - **Errors:** anything that goes wrong shows up as an alert in the corner of
   the window. **Copy details** copies everything needed for a bug report.
 - **Deleting:** after a run, **Move to Trash** (Recycle Bin on Windows)

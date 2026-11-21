@@ -42,7 +42,10 @@ function Session({ videoId }: { videoId: string }) {
       if (!latest) throw new Error("session not loaded");
       return api.saveSession(videoId, build(latest));
     },
-    onSuccess: setSession,
+    onSuccess: (v) => {
+      setSession(v);
+      void qc.invalidateQueries({ queryKey: ["recent"] });
+    },
   });
   // The page opens before yt-dlp has the video's length: check back until it
   // has, and take the new details only while no edit is being saved (the
@@ -160,7 +163,14 @@ function Session({ videoId }: { videoId: string }) {
         {!showResults && <div className="rounded-lg border bg-card p-4">
           <h2 className="font-heading text-lg font-semibold">Paste start times</h2>
           <p className="mb-3 text-sm text-muted-foreground">One per line, with an optional label after the time.</p>
-          <AddClips videoId={videoId} onAdded={setSession} />
+          <AddClips
+            videoId={videoId}
+            initialDraft={session.data.draft}
+            onAdded={(v) => {
+              setSession(v);
+              void qc.invalidateQueries({ queryKey: ["recent"] });
+            }}
+          />
           <div className="mt-4 flex flex-wrap items-center gap-2 border-t pt-4">
             <Label htmlFor="defaultLength">New clips last</Label>
             <Input id="defaultLength" className="w-20" type="number" min={1} max={120} step="0.5" value={lengthInput}
