@@ -69,6 +69,9 @@ type server struct {
 
 func New(d Deps) http.Handler {
 	s := &server{Deps: d, thumbs: newThumbCache(), resolving: map[string]chan struct{}{}}
+	if d.Jobs != nil {
+		d.Jobs.OnFinish = s.markProcessed
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/ping", s.ping)
 	mux.HandleFunc("GET /api/health", s.health)
@@ -467,6 +470,37 @@ func (s *server) getSession(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// timingChanged reports whether the clips' ranges or labels, or the lead-in,
+// differ. Approval is not a change.
+func timingChanged(old, new []clip.Clip, oldLeadIn, newLeadIn float64) bool {
+	if oldLeadIn != newLeadIn || len(old) != len(new) {
+		return true
+	}
+	for i := range old {
+		a, b := old[i], new[i]
+		if a.ID != b.ID || a.Start != b.Start || a.Duration != b.Duration || a.Label != b.Label {
+			return true
+		}
+	}
+	return false
+}
+
+// markProcessed records a fully successful run on the session. A session
+// that no longer exists is ignored.
+func (s *server) markProcessed(v job.View) {
+	if !v.Succeeded() {
+		return
+	}
+	s.editMu.Lock()
+	defer s.editMu.Unlock()
+	sess, err := s.Store.LoadSession(v.SessionID)
+	if err != nil {
+		return
+	}
+	sess.ProcessedAt = time.Now().UTC()
+	s.Store.SaveSession(sess)
+}
+
 func (s *server) putSession(w http.ResponseWriter, r *http.Request) {
 	s.editMu.Lock()
 	defer s.editMu.Unlock()
@@ -485,8 +519,12 @@ func (s *server) putSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, fmt.Sprintf("lead-in must be between 0 and %gs", clip.MaxLeadIn))
 		return
 	}
+	oldClips, oldLeadIn := slices.Clone(sess.Clips), sess.LeadIn
 	sess.Clips = clip.Reconcile(sess.Clips, body.Clips, body.LeadIn != sess.LeadIn, s.NewID)
 	sess.LeadIn = body.LeadIn
+	if timingChanged(oldClips, sess.Clips, oldLeadIn, sess.LeadIn) {
+		sess.ChangedAt = time.Now().UTC()
+	}
 	s.saveAndRespond(w, sess, nil)
 }
 
@@ -517,6 +555,9 @@ func (s *server) parseClips(w http.ResponseWriter, r *http.Request) {
 		incoming = append(incoming, clip.Clip{ID: s.NewID(), Start: e.Start, Duration: dur, Label: e.Label})
 	}
 	sess.Clips = clip.Reconcile(sess.Clips, incoming, false, s.NewID)
+	if len(entries) > 0 {
+		sess.ChangedAt = time.Now().UTC()
+	}
 	s.saveAndRespond(w, sess, func(v SessionView) any { return parseResponse{Session: v, Errors: lineErrs} })
 }
 

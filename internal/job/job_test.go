@@ -424,3 +424,82 @@ func TestMarkTrashed(t *testing.T) {
 		t.Fatalf("reel: ok=%v %+v", ok, v.Concat)
 	}
 }
+
+// finishes collects the views handed to OnFinish.
+type finishes struct {
+	mu    sync.Mutex
+	views []View
+}
+
+func (f *finishes) hook(v View) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.views = append(f.views, v)
+}
+
+func (f *finishes) wait(t *testing.T, n int) []View {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		f.mu.Lock()
+		got := slices.Clone(f.views)
+		f.mu.Unlock()
+		if len(got) >= n {
+			return got
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("OnFinish called fewer than %d times", n)
+	return nil
+}
+
+func TestOnFinishCalledOnceWhenJobStops(t *testing.T) {
+	m := newManager(&fakeCutter{}, &fakeResolver{})
+	var f finishes
+	m.OnFinish = f.hook
+	if _, err := m.Start(request(2, ModeBoth)); err != nil {
+		t.Fatal(err)
+	}
+	got := f.wait(t, 1)
+	time.Sleep(50 * time.Millisecond)
+	got = f.wait(t, 1)
+	if len(got) != 1 {
+		t.Fatalf("OnFinish called %d times; want 1", len(got))
+	}
+	if !got[0].Succeeded() || got[0].Running {
+		t.Errorf("view %+v; want succeeded and not running", got[0])
+	}
+}
+
+func TestOnFinishReportsFailureAndFiresAgainAfterRetry(t *testing.T) {
+	c := &fakeCutter{failures: map[string]int{"b.mp4": 3}}
+	m := newManager(c, &fakeResolver{})
+	var f finishes
+	m.OnFinish = f.hook
+	m.Start(request(2, ModeClips))
+	got := f.wait(t, 1)
+	time.Sleep(50 * time.Millisecond)
+	if got = f.wait(t, 1); len(got) != 1 || got[0].Succeeded() {
+		t.Fatalf("views %+v; want one failed finish", got)
+	}
+	if _, err := m.Retry("abc", "b"); err != nil {
+		t.Fatal(err)
+	}
+	got = f.wait(t, 2)
+	if len(got) != 2 || !got[1].Succeeded() {
+		t.Fatalf("views %+v; want a second, successful finish", got)
+	}
+}
+
+func TestSucceededNeedsReelWhenRequested(t *testing.T) {
+	done := []ClipState{{Status: Done}}
+	if !(View{Clips: done}).Succeeded() {
+		t.Error("done clips without a reel succeed")
+	}
+	if (View{Clips: done, Concat: ConcatState{Requested: true, Status: Failed}}).Succeeded() {
+		t.Error("a failed reel is not a success")
+	}
+	if (View{Clips: []ClipState{{Status: Done}, {Status: Failed}}}).Succeeded() {
+		t.Error("a failed clip is not a success")
+	}
+}

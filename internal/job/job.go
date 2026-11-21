@@ -92,6 +92,17 @@ type View struct {
 	Running   bool        `json:"running"`
 }
 
+// Succeeded reports whether every clip is done and, if a reel was requested,
+// the reel is done too.
+func (v View) Succeeded() bool {
+	for _, c := range v.Clips {
+		if c.Status != Done {
+			return false
+		}
+	}
+	return !v.Concat.Requested || v.Concat.Status == Done
+}
+
 type Task struct {
 	ClipID string
 	Range  clip.Range
@@ -112,6 +123,10 @@ type Request struct {
 type Manager struct {
 	// Backoff before each automatic retry; its length is the retry count.
 	Backoff []time.Duration
+
+	// OnFinish, when set, is called each time a job goes from running to
+	// stopped (including after a manual retry), outside every lock.
+	OnFinish func(View)
 
 	resolver Resolver
 	cutter   Cutter
@@ -448,7 +463,7 @@ func (m *Manager) runClip(j *job, i int, refreshFirst bool) {
 	}
 	startConcat := false
 	size := fileSize(j.clipPath(i))
-	m.update(j, func() {
+	v := m.update(j, func() {
 		c := &j.clips[i]
 		if err != nil {
 			c.Status, c.Error = Failed, err.Error()
@@ -463,6 +478,14 @@ func (m *Manager) runClip(j *job, i int, refreshFirst bool) {
 	})
 	if startConcat {
 		m.runConcat(j)
+	} else if !v.Running {
+		m.finished(v)
+	}
+}
+
+func (m *Manager) finished(v View) {
+	if m.OnFinish != nil {
+		m.OnFinish(v)
 	}
 }
 
@@ -520,13 +543,16 @@ func (m *Manager) runConcat(j *job) {
 		os.RemoveAll(filepath.Join(j.req.OutputDir, PartsDir))
 	}
 	size := fileSize(output)
-	m.update(j, func() {
+	v := m.update(j, func() {
 		if err != nil {
 			j.concat.Status, j.concat.Error = Failed, err.Error()
 		} else {
 			j.concat.Status, j.concat.Size = Done, size
 		}
 	})
+	if !v.Running {
+		m.finished(v)
+	}
 }
 
 // clipPath is where clip i is written: the output folder, or its parts

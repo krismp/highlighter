@@ -682,3 +682,122 @@ func TestDefaultDurationSetting(t *testing.T) {
 		t.Errorf("pasted clip should use the default length 7.5: %+v", c)
 	}
 }
+
+type failingCutter struct{ fileCutter }
+
+func (failingCutter) Cut(ctx context.Context, spec ffmpeg.CutSpec, p func(float64)) error {
+	return errors.New("boom")
+}
+
+func (e *env) status(t *testing.T) Status {
+	t.Helper()
+	_, data := e.do(t, "GET", "/api/sessions", nil)
+	recent := decode[[]RecentSession](t, data)
+	if len(recent) != 1 {
+		t.Fatalf("recent %s; want one entry", data)
+	}
+	return recent[0].Status
+}
+
+// waitStatus polls until the video's status is want.
+func (e *env) waitStatus(t *testing.T, want Status) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for e.status(t) != want {
+		if time.Now().After(deadline) {
+			t.Fatalf("status = %q; want %q", e.status(t), want)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// putClips sends the view's clips back, approved as given and with extra seconds added to the first clip.
+func (e *env) putClips(t *testing.T, v SessionView, approved bool, extra float64) {
+	t.Helper()
+	clips := make([]map[string]any, len(v.Clips))
+	for i, c := range v.Clips {
+		d := c.Duration
+		if i == 0 {
+			d += extra
+		}
+		clips[i] = map[string]any{"id": c.ID, "start": c.Start, "duration": d, "label": c.Label, "approved": approved}
+	}
+	if code, data := e.do(t, "PUT", "/api/sessions/"+vid, map[string]any{"leadIn": v.LeadIn, "clips": clips}); code != 200 {
+		t.Fatalf("put: %d %s", code, data)
+	}
+}
+
+func (e *env) processAndFinish(t *testing.T) SessionView {
+	t.Helper()
+	v := e.approveAll(t, e.addClips(t, "0:01 tip off\n0:08").Session)
+	if code, data := e.do(t, "POST", "/api/sessions/"+vid+"/process", map[string]string{"mode": "both"}); code != 202 {
+		t.Fatalf("process: %d %s", code, data)
+	}
+	return v
+}
+
+func TestProcessMarksDone(t *testing.T) {
+	e := newEnv(t)
+	e.open(t)
+	e.processAndFinish(t)
+	e.waitStatus(t, StatusDone)
+}
+
+func TestApproveAfterDoneStaysDone(t *testing.T) {
+	e := newEnv(t)
+	e.open(t)
+	v := e.processAndFinish(t)
+	e.waitStatus(t, StatusDone)
+	e.putClips(t, v, false, 0)
+	if got := e.status(t); got != StatusDone {
+		t.Errorf("status = %q; want done", got)
+	}
+}
+
+func TestEditAfterDoneIsDraft(t *testing.T) {
+	e := newEnv(t)
+	e.open(t)
+	v := e.processAndFinish(t)
+	e.waitStatus(t, StatusDone)
+	e.putClips(t, v, true, 1)
+	if got := e.status(t); got != StatusDraft {
+		t.Errorf("status = %q; want draft", got)
+	}
+}
+
+func TestFailedRunStaysDraft(t *testing.T) {
+	e := newEnvWith(t, failingCutter{})
+	e.open(t)
+	e.processAndFinish(t)
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if jv, ok := e.jobs.View(vid); ok && !jv.Running {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("job did not finish")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	time.Sleep(50 * time.Millisecond)
+	if got := e.status(t); got != StatusDraft {
+		t.Errorf("status = %q; want draft", got)
+	}
+}
+
+// A job can outlive its session's file (the API refuses deleting a running
+// one, but the file can still vanish); finishing must not recreate it.
+func TestMarkProcessedIgnoresMissingSession(t *testing.T) {
+	e := newEnv(t)
+	jv := job.View{SessionID: "missing", Clips: []job.ClipState{{Status: job.Done}}}
+	if !jv.Succeeded() {
+		t.Fatal("test view should be a success")
+	}
+	e.jobs.OnFinish(jv) // the hook New installed
+	filepath.WalkDir(e.cfg, func(path string, d os.DirEntry, err error) error {
+		if err == nil && strings.Contains(d.Name(), "missing") {
+			t.Errorf("session file created: %s", path)
+		}
+		return nil
+	})
+}
