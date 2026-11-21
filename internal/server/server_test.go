@@ -94,6 +94,14 @@ func newEnvWith(t *testing.T, cutter job.Cutter) *env {
 	quick := &quickTitle{err: errors.New("offline")}
 	jobs := job.NewManager(res, cutter)
 	jobs.Backoff = []time.Duration{0, 0}
+	// A finished job saves the session (markProcessed). Wait for every job
+	// before the temp dir is removed: on Windows a late write makes that fail.
+	// Registered after t.TempDir, so it runs before the dir's cleanup.
+	t.Cleanup(func() {
+		if !jobs.Shutdown(5 * time.Second) {
+			t.Error("jobs still running 5s after the test ended")
+		}
+	})
 	n := 0
 	revealed := &[]string{}
 	trashed := &[]string{}
