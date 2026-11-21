@@ -90,6 +90,7 @@ type View struct {
 	Clips     []ClipState `json:"clips"`
 	Concat    ConcatState `json:"concat"`
 	Running   bool        `json:"running"`
+	StartedAt time.Time   `json:"startedAt"` // when the job started; a retry keeps it
 }
 
 // Succeeded reports whether every clip is done and, if a reel was requested,
@@ -248,10 +249,11 @@ type job struct {
 	req Request
 	sem chan struct{}
 
-	mu     sync.Mutex
-	clips  []ClipState
-	concat ConcatState
-	active int // clips queued or processing
+	mu        sync.Mutex
+	clips     []ClipState
+	concat    ConcatState
+	startedAt time.Time
+	active    int // clips queued or processing
 
 	resolveMu sync.Mutex
 	info      *ytdlp.Info
@@ -265,6 +267,7 @@ func (j *job) viewLocked() View {
 		Clips:     slices.Clone(j.clips),
 		Concat:    j.concat,
 		Running:   j.active > 0 || j.concat.Status == Processing,
+		StartedAt: j.startedAt,
 	}
 }
 
@@ -294,7 +297,7 @@ func (m *Manager) Start(req Request) (View, error) {
 			return View{}, ErrBusy
 		}
 	}
-	j := &job{req: req, sem: make(chan struct{}, req.Concurrency), clips: make([]ClipState, len(req.Tasks))}
+	j := &job{req: req, sem: make(chan struct{}, req.Concurrency), clips: make([]ClipState, len(req.Tasks)), startedAt: time.Now().UTC()}
 	var total float64
 	for i, t := range req.Tasks {
 		j.clips[i] = ClipState{ClipID: t.ClipID, File: t.File, Status: Queued, Duration: t.Range.Duration}

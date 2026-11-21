@@ -485,7 +485,8 @@ func timingChanged(old, new []clip.Clip, oldLeadIn, newLeadIn float64) bool {
 	return false
 }
 
-// markProcessed records a fully successful run on the session. A session
+// markProcessed records a fully successful run on the session, as of when
+// the run started. A session
 // that no longer exists is ignored.
 func (s *server) markProcessed(v job.View) {
 	if !v.Succeeded() {
@@ -497,7 +498,7 @@ func (s *server) markProcessed(v job.View) {
 	if err != nil {
 		return
 	}
-	sess.ProcessedAt = time.Now().UTC()
+	sess.ProcessedAt = v.StartedAt // edits made while it ran are newer
 	s.Store.SaveSession(sess)
 }
 

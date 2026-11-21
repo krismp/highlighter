@@ -801,3 +801,23 @@ func TestMarkProcessedIgnoresMissingSession(t *testing.T) {
 		return nil
 	})
 }
+
+func TestEditDuringRunStaysDraft(t *testing.T) {
+	gate := make(chan struct{})
+	e := newEnvWith(t, gatedCutter{gate})
+	finished := make(chan struct{}, 1)
+	inner := e.jobs.OnFinish
+	e.jobs.OnFinish = func(v job.View) { inner(v); finished <- struct{}{} }
+	e.open(t)
+	v := e.processAndFinish(t)
+	e.putClips(t, v, true, 1) // edit while the job is blocked
+	close(gate)
+	select {
+	case <-finished:
+	case <-time.After(2 * time.Second):
+		t.Fatal("job did not finish")
+	}
+	if got := e.status(t); got != StatusDraft {
+		t.Errorf("status = %q; want draft", got)
+	}
+}
