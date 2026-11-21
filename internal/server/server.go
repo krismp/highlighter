@@ -325,6 +325,9 @@ func (s *server) listSessions(w http.ResponseWriter, r *http.Request) {
 	out := make([]RecentSession, 0, len(sessions))
 	for _, sess := range sessions {
 		jv, found := s.Jobs.View(sess.VideoID)
+		if found {
+			sess = withJobOutcome(sess, jv)
+		}
 		out = append(out, RecentSession{
 			VideoID: sess.VideoID, Title: sess.Title, ClipCount: len(sess.Clips), UpdatedAt: sess.UpdatedAt,
 			Status: videoStatus(sess, found && jv.Running, outputDir(st.OutputRoot, sess.Title)),
@@ -487,8 +490,7 @@ func timingChanged(old, new []clip.Clip, oldLeadIn, newLeadIn float64) bool {
 }
 
 // markProcessed records a fully successful run on the session, as of when
-// the run started. A session
-// that no longer exists is ignored.
+// the run started. A session that no longer exists is ignored.
 func (s *server) markProcessed(v job.View) {
 	if !v.Succeeded() {
 		return
@@ -496,11 +498,17 @@ func (s *server) markProcessed(v job.View) {
 	s.editMu.Lock()
 	defer s.editMu.Unlock()
 	sess, err := s.Store.LoadSession(v.SessionID)
+	if errors.Is(err, store.ErrNotFound) {
+		return
+	}
 	if err != nil {
+		log.Printf("mark %s processed: %v", v.SessionID, err)
 		return
 	}
 	sess.ProcessedAt = v.StartedAt // edits made while it ran are newer
-	s.Store.SaveSession(sess)
+	if _, err := s.Store.SaveSession(sess); err != nil {
+		log.Printf("mark %s processed: %v", v.SessionID, err)
+	}
 }
 
 func (s *server) putSession(w http.ResponseWriter, r *http.Request) {
@@ -595,6 +603,7 @@ func (s *server) putDraft(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) process(w http.ResponseWriter, r *http.Request) {
+	startedAt := time.Now().UTC() // before reading the clips: later edits count as newer
 	sess, ok := s.loadSession(w, r)
 	if !ok {
 		return
@@ -637,7 +646,7 @@ func (s *server) process(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req := job.Request{SessionID: sess.VideoID, URL: sess.URL, OutputDir: v.OutputDir,
-		Mode: body.Mode, ReelFile: reelFile, Encoder: s.Encoder, Concurrency: st.Concurrency}
+		Mode: body.Mode, ReelFile: reelFile, Encoder: s.Encoder, Concurrency: st.Concurrency, StartedAt: startedAt}
 	for _, c := range v.Clips {
 		req.Tasks = append(req.Tasks, job.Task{ClipID: c.ID, Range: clip.Range{Start: c.EffStart, Duration: c.EffDuration}, File: c.File})
 	}

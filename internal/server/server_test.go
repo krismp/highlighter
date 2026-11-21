@@ -822,6 +822,28 @@ func TestEditDuringRunStaysDraft(t *testing.T) {
 	}
 }
 
+// Between the job publishing "stopped" and markProcessed saving, the list
+// must already call the video done.
+func TestListDoneBeforeProcessedAtSaved(t *testing.T) {
+	e := newEnv(t)
+	e.jobs.OnFinish = func(job.View) {} // the save has not happened yet
+	e.open(t)
+	e.processAndFinish(t)
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if jv, ok := e.jobs.View(vid); ok && !jv.Running {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("job did not finish")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if got := e.status(t); got != StatusDone {
+		t.Errorf("status = %q; want done", got)
+	}
+}
+
 func TestDraftSavedAndShown(t *testing.T) {
 	e := newEnv(t)
 	v := e.open(t)

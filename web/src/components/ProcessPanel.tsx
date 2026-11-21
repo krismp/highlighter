@@ -155,7 +155,12 @@ export function JobResults({ session, job, onEdit }: { session: SessionView; job
   const id = session.videoId;
   const qc = useQueryClient();
   const setJob = (v: JobView) => qc.setQueryData(["job", id], v);
-  const retry = useMutation({ meta: { errorTitle: "Couldn't retry" }, mutationFn: (clipId: string) => api.retry(id, clipId), onSuccess: setJob });
+  const retry = useMutation({ meta: { errorTitle: "Couldn't retry" }, mutationFn: (clipId: string) => api.retry(id, clipId),
+    onSuccess: (v) => {
+      setJob(v);
+      void qc.invalidateQueries({ queryKey: ["recent"] }); // the video is processing again
+    },
+  });
   const openFolder = useMutation({ meta: { errorTitle: "Couldn't open the folder" }, mutationFn: () => api.openFolder(id) });
   const reveal = useMutation({ meta: { errorTitle: "Couldn't show the file" }, mutationFn: (file: string) => api.reveal(id, file) });
   const trash = useMutation({

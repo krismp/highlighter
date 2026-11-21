@@ -3,9 +3,11 @@ package server
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/krismp/highlighter/internal/clip"
+	"github.com/krismp/highlighter/internal/job"
 	"github.com/krismp/highlighter/internal/store"
 )
 
@@ -21,7 +23,8 @@ const (
 
 // videoStatus: a draft has clips changed since the last successful run, or
 // unparsed paste text. Sessions saved before ChangedAt/ProcessedAt existed
-// are judged by their files in outputDir.
+// are done if their files are in outputDir or every clip is approved
+// (processing requires that, and any timing change resets it).
 func videoStatus(sess store.Session, running bool, outputDir string) Status {
 	switch {
 	case running:
@@ -31,7 +34,7 @@ func videoStatus(sess store.Session, running bool, outputDir string) Status {
 	case len(sess.Clips) == 0:
 		return StatusEmpty
 	case sess.ChangedAt.IsZero() && sess.ProcessedAt.IsZero():
-		if outputsExist(sess, outputDir) {
+		if allApproved(sess) || outputsExist(sess, outputDir) {
 			return StatusDone
 		}
 		return StatusDraft
@@ -57,4 +60,18 @@ func outputsExist(sess store.Session, dir string) bool {
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+// withJobOutcome counts a job that has succeeded but whose ProcessedAt is not
+// saved yet (the gap before markProcessed runs) as processing the session,
+// unless the clips changed since the job started.
+func withJobOutcome(sess store.Session, jv job.View) store.Session {
+	if !jv.Running && jv.Succeeded() && !jv.StartedAt.Before(sess.ChangedAt) && jv.StartedAt.After(sess.ProcessedAt) {
+		sess.ProcessedAt = jv.StartedAt
+	}
+	return sess
+}
+
+func allApproved(sess store.Session) bool {
+	return !slices.ContainsFunc(sess.Clips, func(c clip.Clip) bool { return !c.Approved })
 }

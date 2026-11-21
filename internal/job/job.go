@@ -119,6 +119,7 @@ type Request struct {
 	ReelFile    string // combined reel file name; ConcatFile when empty
 	Encoder     ffmpeg.Encoder
 	Concurrency int
+	StartedAt   time.Time // when the run began, if earlier than Start; now when zero
 }
 
 type Manager struct {
@@ -297,7 +298,11 @@ func (m *Manager) Start(req Request) (View, error) {
 			return View{}, ErrBusy
 		}
 	}
-	j := &job{req: req, sem: make(chan struct{}, req.Concurrency), clips: make([]ClipState, len(req.Tasks)), startedAt: time.Now().UTC()}
+	startedAt := req.StartedAt
+	if startedAt.IsZero() {
+		startedAt = time.Now().UTC()
+	}
+	j := &job{req: req, sem: make(chan struct{}, req.Concurrency), clips: make([]ClipState, len(req.Tasks)), startedAt: startedAt}
 	var total float64
 	for i, t := range req.Tasks {
 		j.clips[i] = ClipState{ClipID: t.ClipID, File: t.File, Status: Queued, Duration: t.Range.Duration}

@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { api, type LineError, type SessionView } from "@/lib/api";
+import { reportError } from "@/lib/errors";
 
 export function AddClips({ videoId, initialDraft, onAdded }: { videoId: string; initialDraft: string; onAdded: (s: SessionView) => void }) {
   const qc = useQueryClient();
@@ -10,7 +11,7 @@ export function AddClips({ videoId, initialDraft, onAdded }: { videoId: string; 
   // The draft save waits for a pause in typing; `pending` holds the text it will send.
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pending = useRef<string | null>(null);
-  const sendDraft = (t: string) => api.saveDraft(videoId, t).then(() => qc.invalidateQueries({ queryKey: ["recent"] }), () => {});
+  const sendDraft = (t: string) => api.saveDraft(videoId, t).then(() => qc.invalidateQueries({ queryKey: ["recent"] }), (err) => reportError("Couldn't save your draft", err));
   const cancelDraft = () => {
     if (timer.current) clearTimeout(timer.current);
     timer.current = null;

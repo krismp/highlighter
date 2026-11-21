@@ -12,7 +12,11 @@ export function useJob(videoId: string): JobView | null {
     es.onopen = () => window.clearTimeout(lost);
     es.onmessage = (e) => {
       try {
-        qc.setQueryData(["job", videoId], JSON.parse(e.data) as JobView);
+        const next = JSON.parse(e.data) as JobView;
+        const was = qc.getQueryData<JobView | null>(["job", videoId]);
+        qc.setQueryData(["job", videoId], next);
+        // A run just ended: the Videos list's status for this video has changed.
+        if (was?.running && !next.running) void qc.invalidateQueries({ queryKey: ["recent"] });
       } catch (err) {
         reportError("Couldn't read processing progress", err, `event data: ${String(e.data).slice(0, 300)}`);
       }
