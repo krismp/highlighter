@@ -17,6 +17,8 @@ export function AddClips({ videoId, initialDraft, onAdded }: { videoId: string; 
     pending.current = null;
   };
   const scheduleDraft = (t: string) => {
+    // Keep the cached session's draft current so a remount (before or after the PUT) starts from this text.
+    qc.setQueryData<SessionView>(["session", videoId], (s) => s && { ...s, draft: t });
     if (timer.current) clearTimeout(timer.current);
     pending.current = t;
     timer.current = setTimeout(() => {
