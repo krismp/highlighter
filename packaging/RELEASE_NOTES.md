@@ -1,3 +1,10 @@
+## What's new in 1.3.2
+
+- **Labels can start with a number.** `3 PT: 10:27 - 11:10` is now the play "3 PT" from 10:27 to 11:10. Before, it became a clip at 0:03. `45 dunk` still means a clip at 45 seconds.
+- **Each clip shows its range,** for example `10:27 → 11:10`, next to its length, so you can check it against the times you pasted. It updates as you adjust the start or length.
+
+If you pasted a line like `3 PT: 10:27 - 11:10` before this update, delete the clip it made at 0:03 and paste that line again.
+
 ## What's new in 1.3.1
 
 - Release notes in **Settings → Updates** are now properly formatted, with headings, lists and bold text, instead of raw Markdown. The download and install steps are no longer shown there.
