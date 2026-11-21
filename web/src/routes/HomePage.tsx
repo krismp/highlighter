@@ -1,15 +1,17 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Film, X } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { ConfirmButton } from "@/components/ConfirmButton";
 import { OpenVideoForm } from "@/components/OpenVideoForm";
 import { ToolsBanner } from "@/components/ToolsBanner";
+import { StatusChip } from "@/components/StatusChip";
+import { useRecent } from "@/hooks/useRecent";
 import { api } from "@/lib/api";
 
 /** Search-engine simple: the logo, one box for a YouTube link, and recent videos underneath. */
 export function HomePage() {
   const qc = useQueryClient();
-  const recent = useQuery({ queryKey: ["recent"], queryFn: api.recent, meta: { errorTitle: "Couldn't load recent videos" } });
+  const recent = useRecent();
   // Forgets the video's marked clips; the clip files on disk stay.
   const remove = useMutation({
     meta: { errorTitle: "Couldn't remove the video" },
@@ -43,14 +45,15 @@ export function HomePage() {
       </Link>
 
       {recent.data && recent.data.length > 0 && (
-        <section aria-labelledby="recent-heading">
+        <section id="recent" aria-labelledby="recent-heading">
           <h2 id="recent-heading" className="mb-2 px-3 text-sm font-semibold text-muted-foreground">Recent videos</h2>
           <ul className="divide-y rounded-lg border bg-card">
             {recent.data.map((r) => (
               <li key={r.videoId} className="group flex items-center gap-1 pr-1 hover:bg-muted">
                 <Link to="/s/$videoId" params={{ videoId: r.videoId }} className="flex min-w-0 flex-1 justify-between gap-4 px-3 py-2.5">
                   <span className="truncate">{r.title}</span>
-                  <span className="shrink-0 text-sm text-muted-foreground">
+                  <span className="flex shrink-0 items-center gap-2 text-sm text-muted-foreground">
+                    <StatusChip status={r.status} />
                     {r.clipCount} clips · {new Date(r.updatedAt).toLocaleDateString()}
                   </span>
                 </Link>

@@ -7,9 +7,14 @@ export interface SessionView {
   clips: ClipView[]; issues: Issue[]; canProcess: boolean; outputDir: string; reelName: string;
   /** The page opens before yt-dlp has fetched the length; these say how that is going. */
   resolving: boolean; resolveError: string;
+  /** Text pasted in the clip box but not yet turned into clips. */
+  draft: string;
 }
 export type ClipInput = Omit<Clip, "id"> & { id?: string };
-export interface RecentSession { videoId: string; title: string; clipCount: number; updatedAt: string }
+/** Where a video stands: being processed, clips typed but not made, finished, or nothing marked yet. */
+export type VideoStatus = "processing" | "draft" | "done" | "empty";
+export const unfinished = (s: VideoStatus) => s === "processing" || s === "draft";
+export interface RecentSession { videoId: string; title: string; clipCount: number; updatedAt: string; status: VideoStatus }
 export interface ToolStatus { found: boolean; path: string; version: string }
 export interface Health { ytDlp: ToolStatus; ffmpeg: ToolStatus; deno: ToolStatus; encoder: string; os: string; version: string }
 export interface Connectivity { online: boolean; error: string }
@@ -101,6 +106,8 @@ export const api = {
   retryResolve: (id: string) => request<SessionView>("POST", `/sessions/${id}/resolve`, {}),
   saveSession: (id: string, body: { leadIn: number; clips: ClipInput[] }) =>
     request<SessionView>("PUT", `/sessions/${id}`, body),
+  /** Remembers the clip box's text so leaving the page does not lose it. */
+  saveDraft: (id: string, text: string) => request<void>("PUT", `/sessions/${id}/draft`, { text }),
   parseClips: (id: string, text: string) =>
     request<{ session: SessionView; errors: LineError[] }>("POST", `/sessions/${id}/clips/parse`, { text }),
   process: (id: string, mode: OutputMode, reelName: string) =>
