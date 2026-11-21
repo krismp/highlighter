@@ -123,6 +123,15 @@ export function ClipRow({ clip, issues, playerReady, previewing, playhead, range
           ))}
         </div>
 
+        {/* The clip's own span, to cross-check against the pasted "start - end" */}
+        <span
+          className={cn("score text-lg font-semibold tabular-nums", live ? "text-white/80" : "text-foreground/80")}
+          title="Clip range: start to end"
+          aria-label={`Clip runs from ${clip.startText} to ${clock(clip.start + clip.duration)}`}
+        >
+          {clip.startText} <span className={live ? "text-white/50" : "text-muted-foreground"}>→</span> {clock(clip.start + clip.duration)}
+        </span>
+
         {live ? (
           <Button size="sm" variant="secondary" onClick={onStop}><Square className="size-3.5 fill-current" /> Stop</Button>
         ) : (
