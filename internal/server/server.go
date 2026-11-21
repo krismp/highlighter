@@ -314,9 +314,17 @@ func (s *server) listSessions(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 500, err.Error())
 		return
 	}
+	st, ok := s.settings(w)
+	if !ok {
+		return
+	}
 	out := make([]RecentSession, 0, len(sessions))
 	for _, sess := range sessions {
-		out = append(out, RecentSession{VideoID: sess.VideoID, Title: sess.Title, ClipCount: len(sess.Clips), UpdatedAt: sess.UpdatedAt})
+		jv, found := s.Jobs.View(sess.VideoID)
+		out = append(out, RecentSession{
+			VideoID: sess.VideoID, Title: sess.Title, ClipCount: len(sess.Clips), UpdatedAt: sess.UpdatedAt,
+			Status: videoStatus(sess, found && jv.Running, outputDir(st.OutputRoot, sess.Title)),
+		})
 	}
 	writeJSON(w, 200, out)
 }

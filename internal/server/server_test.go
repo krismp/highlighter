@@ -201,6 +201,17 @@ func TestOpenVideo(t *testing.T) {
 	}
 }
 
+func TestRecentListsStatus(t *testing.T) {
+	e := newEnv(t)
+	e.open(t)
+	e.addClips(t, "0:05 Andi crossover")
+	_, data := e.do(t, "GET", "/api/sessions", nil)
+	recent := decode[[]RecentSession](t, data)
+	if len(recent) != 1 || recent[0].Status != StatusDraft {
+		t.Errorf("recent %s; want one draft", data)
+	}
+}
+
 func TestParseClips(t *testing.T) {
 	e := newEnv(t)
 	e.open(t)

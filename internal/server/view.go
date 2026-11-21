@@ -39,6 +39,7 @@ type RecentSession struct {
 	Title     string    `json:"title"`
 	ClipCount int       `json:"clipCount"`
 	UpdatedAt time.Time `json:"updatedAt"`
+	Status    Status    `json:"status"`
 }
 
 type parseResponse struct {

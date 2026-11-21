@@ -38,6 +38,12 @@ type Session struct {
 	Resolving    bool      `json:"resolving,omitempty"`
 	ResolveError string    `json:"resolveError,omitempty"`
 	UpdatedAt    time.Time `json:"updatedAt"`
+	// Draft is paste text not yet turned into clips. ChangedAt is the last
+	// edit to the clips, ProcessedAt the last successful run; both are zero
+	// on sessions saved before they existed.
+	Draft       string    `json:"draft,omitempty"`
+	ChangedAt   time.Time `json:"changedAt,omitzero"`
+	ProcessedAt time.Time `json:"processedAt,omitzero"`
 }
 
 type Settings struct {
