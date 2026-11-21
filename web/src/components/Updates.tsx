@@ -4,9 +4,11 @@ import { ArrowDownToLine, CircleCheck, RotateCw, Sparkles, X } from "lucide-reac
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Markdown } from "@/components/Markdown";
 import { api } from "@/lib/api";
 import { inDesktopApp } from "@/lib/desktop";
 import { bytes } from "@/lib/format";
+import { whatsNew } from "@/lib/markdown";
 import { useUpdateCheck } from "@/hooks/useUpdateCheck";
 import { dismissedVersion, dismissVersion, installUpdate, useInstallState, type InstallState } from "@/lib/updates";
 import { cn } from "@/lib/utils";
@@ -119,10 +121,10 @@ export function UpdatesCard() {
             </div>
             {u && (
               <>
-                {u.notes && (
-                  <div className="max-h-56 overflow-auto rounded-md border bg-muted/40 p-3 whitespace-pre-wrap select-text">
-                    {u.date && <p className="mb-1 text-xs text-muted-foreground">Released {new Date(u.date * 1000).toLocaleDateString()}</p>}
-                    {u.notes}
+                {u.notes && whatsNew(u.notes) && (
+                  <div className="max-h-72 overflow-auto rounded-md border bg-muted/40 p-4 select-text">
+                    {u.date && <p className="mb-2 text-xs text-muted-foreground">Released {new Date(u.date * 1000).toLocaleDateString()}</p>}
+                    <Markdown text={whatsNew(u.notes)} />
                   </div>
                 )}
                 <div className="flex flex-wrap items-center gap-3">

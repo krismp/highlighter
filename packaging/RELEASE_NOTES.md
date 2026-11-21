@@ -1,3 +1,7 @@
+## What's new in 1.3.1
+
+- Release notes in **Settings → Updates** are now properly formatted, with headings, lists and bold text, instead of raw Markdown. The download and install steps are no longer shown there.
+
 ## What's new in 1.3.0
 
 ### Get back to any video from anywhere

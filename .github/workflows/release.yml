@@ -169,8 +169,8 @@ jobs:
           else
             gh release create "$tag" dist/Highlighter-*.zip --verify-tag --title "Highlighter $tag" --notes-file packaging/RELEASE_NOTES.md
           fi
-      # The in-app updater's files and feed. The app shows the release's own
-      # notes, unless they are just the standard install notes.
+      # The in-app updater's files and feed. The app shows the release notes'
+      # "What's new" part (everything before "## Download").
       - env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -180,7 +180,8 @@ jobs:
             exit 0
           fi
           gh release view "$tag" --json body -q .body > notes.md
-          if cmp -s <(tr -d '\r' < notes.md | sed -e '$a\') <(sed -e '$a\' packaging/RELEASE_NOTES.md); then : > notes.md; fi
+          # Only the "What's new" part: the download and install steps don't belong in the app.
+          tr -d '\r' < notes.md | sed -n '/^## Download/q;p' > notes.trimmed && mv notes.trimmed notes.md
           scripts/updater-manifest.sh "$tag" dist/updater notes.md > dist/updater/latest.json
           cat dist/updater/latest.json
           gh release upload "$tag" dist/updater/* --clobber
