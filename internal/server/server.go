@@ -87,6 +87,7 @@ func New(d Deps) http.Handler {
 	mux.HandleFunc("PUT /api/sessions/{id}", s.putSession)
 	mux.HandleFunc("POST /api/sessions/{id}/resolve", s.retryResolve)
 	mux.HandleFunc("POST /api/sessions/{id}/clips/parse", s.parseClips)
+	mux.HandleFunc("PUT /api/sessions/{id}/draft", s.putDraft)
 	mux.HandleFunc("POST /api/sessions/{id}/process", s.process)
 	mux.HandleFunc("POST /api/sessions/{id}/retry/{clipId}", s.retry)
 	mux.HandleFunc("GET /api/sessions/{id}/events", s.events)
@@ -559,7 +560,38 @@ func (s *server) parseClips(w http.ResponseWriter, r *http.Request) {
 	if len(entries) > 0 {
 		sess.ChangedAt = time.Now().UTC()
 	}
+	failed := make([]string, 0, len(lineErrs))
+	for _, le := range lineErrs {
+		failed = append(failed, le.Text)
+	}
+	sess.Draft = strings.Join(failed, "\n")
 	s.saveAndRespond(w, sess, func(v SessionView) any { return parseResponse{Session: v, Errors: lineErrs} })
+}
+
+// putDraft stores the paste-box text. It is not a clip change, so ChangedAt stays put.
+func (s *server) putDraft(w http.ResponseWriter, r *http.Request) {
+	s.editMu.Lock()
+	defer s.editMu.Unlock()
+	sess, ok := s.loadSession(w, r)
+	if !ok {
+		return
+	}
+	var body struct {
+		Text string `json:"text"`
+	}
+	if !readJSON(w, r, &body) {
+		return
+	}
+	if len(body.Text) > 64<<10 {
+		writeError(w, 400, "That text is too long to keep as a draft.")
+		return
+	}
+	sess.Draft = body.Text
+	if _, err := s.Store.SaveSession(sess); err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
+	w.WriteHeader(204)
 }
 
 func (s *server) process(w http.ResponseWriter, r *http.Request) {

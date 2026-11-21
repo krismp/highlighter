@@ -821,3 +821,37 @@ func TestEditDuringRunStaysDraft(t *testing.T) {
 		t.Errorf("status = %q; want draft", got)
 	}
 }
+
+func TestDraftSavedAndShown(t *testing.T) {
+	e := newEnv(t)
+	v := e.open(t)
+	code, data := e.do(t, "PUT", "/api/sessions/"+v.VideoID+"/draft", map[string]string{"text": "PLAY: 1:00 - 1:10"})
+	if code != 204 {
+		t.Fatalf("put draft: %d %s", code, data)
+	}
+	_, data = e.do(t, "GET", "/api/sessions/"+v.VideoID, nil)
+	if got := decode[SessionView](t, data).Draft; got != "PLAY: 1:00 - 1:10" {
+		t.Errorf("draft %q", got)
+	}
+	if st := e.status(t); st != StatusDraft {
+		t.Errorf("status %q; want draft", st)
+	}
+}
+
+func TestParseKeepsFailedLinesAsDraft(t *testing.T) {
+	e := newEnv(t)
+	e.open(t)
+	r := e.addClips(t, "0:05\nbanana")
+	if r.Session.Draft != "banana" {
+		t.Errorf("draft %q; want banana", r.Session.Draft)
+	}
+}
+
+func TestDraftTooLong(t *testing.T) {
+	e := newEnv(t)
+	v := e.open(t)
+	code, _ := e.do(t, "PUT", "/api/sessions/"+v.VideoID+"/draft", map[string]string{"text": strings.Repeat("a", 64<<10+1)})
+	if code != 400 {
+		t.Errorf("code %d; want 400", code)
+	}
+}

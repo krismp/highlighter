@@ -32,6 +32,7 @@ type SessionView struct {
 	ReelName     string       `json:"reelName"`     // default combined-reel name, without .mp4
 	Resolving    bool         `json:"resolving"`    // still fetching the video's details
 	ResolveError string       `json:"resolveError"` // why fetching them failed
+	Draft        string       `json:"draft"`        // paste-box text not yet turned into clips
 }
 
 type RecentSession struct {
@@ -58,7 +59,7 @@ func buildView(s store.Session, outputRoot string) SessionView {
 		Duration: s.Duration, DurationText: timecode.Format(s.Duration), LeadIn: s.LeadIn,
 		Clips: make([]ClipView, 0, len(s.Clips)), Issues: issues,
 		CanProcess: clip.CanProcess(s.Clips, issues) && !s.Resolving && s.ResolveError == "",
-		Resolving:  s.Resolving, ResolveError: s.ResolveError,
+		Resolving:  s.Resolving, ResolveError: s.ResolveError, Draft: s.Draft,
 		OutputDir: outputDir(outputRoot, s.Title),
 		ReelName:  clip.ReelName(s.Title),
 	}
