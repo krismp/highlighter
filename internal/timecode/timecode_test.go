@@ -127,3 +127,22 @@ func TestParseListLabelFirst(t *testing.T) {
 		t.Errorf("errs = %+v; want errors for lines 6 and 7", errs)
 	}
 }
+
+// A label may itself start with a number ("3 PT"); a bare number followed by
+// an m:ss time or range is part of the label, not a start in seconds.
+func TestParseListLabelStartingWithNumber(t *testing.T) {
+	text := "3 PT: 10:27 - 11:10\n" +
+		"2 PT: 5:34\n" +
+		"45 dunk\n" + // bare seconds with a label still work
+		"83\n"
+	entries, errs := ParseList(text)
+	want := []Entry{
+		{Start: 627, Duration: 43, Label: "3 PT"},
+		{Start: 334, Label: "2 PT"},
+		{Start: 45, Label: "dunk"},
+		{Start: 83},
+	}
+	if len(errs) != 0 || !reflect.DeepEqual(entries, want) {
+		t.Errorf("entries = %+v, errs = %+v\nwant      %+v", entries, errs, want)
+	}
+}

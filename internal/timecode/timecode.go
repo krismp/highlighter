@@ -125,8 +125,15 @@ func parseLabelled(line string) (e Entry, err error, ok bool) {
 		e.Label = strings.Trim(m[3], labelTrim)
 		return e, err, true
 	}
-	if _, perr := Parse(strings.TrimRight(strings.Fields(line)[0], labelTrim)); perr == nil {
-		return Entry{}, nil, false // starts with a time: "<time> [label]" or a list of times
+	// Starts with a time: "<time> [label]" or a list of times. A bare number
+	// followed by an m:ss time or range is a label instead ("3 PT: 10:27").
+	first := strings.TrimRight(strings.Fields(line)[0], labelTrim)
+	if _, perr := Parse(first); perr == nil {
+		labelFirst := !strings.Contains(first, ":") && allTimestamps(line) == nil &&
+			(rangeLast.MatchString(line) || stampLast.MatchString(line))
+		if !labelFirst {
+			return Entry{}, nil, false
+		}
 	}
 	if m := rangeLast.FindStringSubmatch(line); m != nil {
 		e, err = parseRange(m[2], m[3])
