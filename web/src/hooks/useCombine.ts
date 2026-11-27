@@ -4,6 +4,8 @@ import { api, type AddError, type CombineChoices, type CombineJob, type CombineV
 import { reportError } from "@/lib/errors";
 
 const key = ["combine"];
+/** Marks adds in flight, so opening Combine doesn't clear videos being dropped in. */
+export const addVideosKey = ["combine", "add"];
 
 /** Shows the files that could not be added, in one alert. */
 export function reportAddErrors(errors: AddError[]) {
@@ -17,6 +19,7 @@ export function reportAddErrors(errors: AddError[]) {
 export function useAddVideos() {
   const qc = useQueryClient();
   return useMutation({
+    mutationKey: addVideosKey,
     meta: { errorTitle: "Couldn't add the videos" },
     mutationFn: api.addVideos,
     onSuccess: ({ combine, errors }) => {

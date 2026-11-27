@@ -189,6 +189,11 @@ func (s *server) addCombineItems(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// Videos added after a finished combine start a new combination: the last
+	// line-up and result are done with (their files stay).
+	if s.Combiner.View().Status == combine.Done && s.Combiner.Reset() {
+		d.Items, d.Name = []store.CombineItem{}, ""
+	}
 	errs := []addError{}
 	for _, p := range body.Paths {
 		name := filepath.Base(p)

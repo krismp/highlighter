@@ -1,11 +1,12 @@
 import { Film, Pencil, Plus } from "lucide-react";
-import { useMutation } from "@tanstack/react-query";
+import { useIsMutating, useMutation } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 import { Library } from "@/components/combine/Library";
 import { LineUp } from "@/components/combine/LineUp";
 import { OutputPanel } from "@/components/combine/OutputPanel";
 import { ReelStrip } from "@/components/combine/ReelStrip";
 import { Button } from "@/components/ui/button";
-import { useCombine } from "@/hooks/useCombine";
+import { addVideosKey, useCombine } from "@/hooks/useCombine";
 import { inDesktopApp, pickVideos } from "@/lib/desktop";
 import { reportError } from "@/lib/errors";
 
@@ -18,7 +19,18 @@ export function CombinePage() {
     onSuccess: (paths) => paths.length > 0 && c.add.mutate(paths),
   });
   const v = c.view;
+  // Each visit starts fresh: a combine that already finished is cleared on
+  // arrival (its file stays and is listed below). An unfinished line-up, a
+  // running combine and videos being dropped in are kept.
+  const addsInFlight = useIsMutating({ mutationKey: addVideosKey });
+  const [arrival, setArrival] = useState<"waiting" | "clearing" | "ready">("waiting");
+  if (v && arrival === "waiting") setArrival(v.job.status === "done" && addsInFlight === 0 ? "clearing" : "ready");
+  const { mutate: clear } = c.clear;
+  useEffect(() => {
+    if (arrival === "clearing") clear(undefined, { onSettled: () => setArrival("ready") });
+  }, [arrival, clear]);
   if (!v) return c.query.isError ? <p className="text-muted-foreground">Reload the page to try again.</p> : null;
+  if (arrival !== "ready") return null;
 
   const job = v.job;
   const locked = job.running || job.status === "done";

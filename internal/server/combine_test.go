@@ -192,6 +192,28 @@ func TestCombineRun(t *testing.T) {
 	}
 }
 
+// Adding videos after a finished combine starts a new line-up instead of
+// appending to the one that was just combined.
+func TestCombineAddAfterDoneStartsFresh(t *testing.T) {
+	e := newEnv(t)
+	paths := e.videos(t, "a.mp4", "b.mp4", "c.mp4")
+	e.addVideos(t, paths[0], paths[1])
+	if code, data := e.do(t, "POST", "/api/combine/start", map[string]any{}); code != 202 {
+		t.Fatalf("start: %d %s", code, data)
+	}
+	if v := waitCombine(t, e); v.Status != combine.Done {
+		t.Fatalf("combine: %+v", v)
+	}
+	res := e.addVideos(t, paths[2])
+	if len(res.Combine.Items) != 1 || res.Combine.Items[0].Path != paths[2] || res.Combine.Job.Status != combine.Idle {
+		t.Errorf("after done: %+v", res.Combine)
+	}
+	// Before any combine, adding appends as usual.
+	if res := e.addVideos(t, paths[0]); len(res.Combine.Items) != 2 {
+		t.Errorf("append: %d items", len(res.Combine.Items))
+	}
+}
+
 func TestCombineFilesAndLibrary(t *testing.T) {
 	e := newEnv(t)
 	paths := e.videos(t, "01_a.mp4", "02_b.mp4")
