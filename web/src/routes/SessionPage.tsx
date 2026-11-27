@@ -25,9 +25,10 @@ function Session({ videoId }: { videoId: string }) {
   const qc = useQueryClient();
   const job = useJob(videoId);
   // The results replace the clip list while a run is going, and stay after it
-  // ends until "Edit these clips".
-  const [resultsOpen, setResultsOpen] = useState(false);
-  const showResults = job !== null && (resultsOpen || job.running);
+  // ends, until "Edit these clips" or adding a clip brings the list back.
+  // "auto" follows the run: results while it is going, clips otherwise.
+  const [panel, setPanel] = useState<"auto" | "results" | "clips">("auto");
+  const showResults = job !== null && (panel === "results" || (panel === "auto" && job.running));
   const session = useQuery({ queryKey: ["session", videoId], queryFn: () => api.session(videoId), meta: { inline: true } });
   const player = useYouTubePlayer(videoId, session.data !== undefined);
   const net = useConnectivity();
@@ -103,6 +104,7 @@ function Session({ videoId }: { videoId: string }) {
   const addAtPlayhead = () => {
     const start = Math.floor(player.currentTime());
     update((cur) => ({ clips: [...toInputs(cur.clips), { start, duration: defaultLength, label: "", approved: false }] }));
+    setPanel("clips"); // show the list the new clip went into, not the last run's results
   };
   const commitDefaultLength = () => {
     const v = Math.round(Number(lengthInput) * 10) / 10;
@@ -187,7 +189,7 @@ function Session({ videoId }: { videoId: string }) {
       </section>
 
       {showResults ? (
-        <JobResults session={s} job={job} onEdit={() => setResultsOpen(false)} />
+        <JobResults session={s} job={job} onEdit={() => setPanel("clips")} />
       ) : (
         <section className="grid content-start gap-3">
           <div className="flex flex-wrap items-end justify-between gap-2">
@@ -197,10 +199,17 @@ function Session({ videoId }: { videoId: string }) {
                 {s.clips.length === 0 ? "None yet" : `${approved} of ${s.clips.length} approved`}
               </p>
             </div>
-            <Button size="sm" variant="outline" disabled={unapproved === 0}
-              onClick={() => update((cur) => ({ clips: toInputs(cur.clips).map((c) => ({ ...c, approved: true })) }))}>
-              Approve the other {unapproved}
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              {job && (
+                <Button size="sm" variant="ghost" onClick={() => setPanel("results")}>
+                  {job.running ? "See progress" : "See last results"}
+                </Button>
+              )}
+              <Button size="sm" variant="outline" disabled={unapproved === 0}
+                onClick={() => update((cur) => ({ clips: toInputs(cur.clips).map((c) => ({ ...c, approved: true })) }))}>
+                Approve the other {unapproved}
+              </Button>
+            </div>
           </div>
           {s.clips.length > 0 && (
             <div className="h-1.5 overflow-hidden rounded-full bg-muted" aria-hidden>
@@ -227,7 +236,7 @@ function Session({ videoId }: { videoId: string }) {
               onRemove={() => update((cur) => ({ clips: toInputs(cur.clips).filter((x) => x.id !== c.id) }))}
             />
           ))}
-          <ProcessPanel session={s} busy={job?.running ?? false} onStarted={() => setResultsOpen(true)} />
+          <ProcessPanel session={s} busy={job?.running ?? false} onStarted={() => setPanel("results")} />
         </section>
       )}
     </div>
