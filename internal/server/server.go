@@ -312,8 +312,12 @@ func (s *server) putSettings(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, st)
 }
 
+// recentLimit caps the recent videos listed on Home and in the Videos menu,
+// keeping the list (and the work of building it on every poll) small.
+const recentLimit = 5
+
 func (s *server) listSessions(w http.ResponseWriter, r *http.Request) {
-	sessions, err := s.Store.RecentSessions(20)
+	sessions, err := s.Store.RecentSessions(recentLimit)
 	if err != nil {
 		writeError(w, 500, err.Error())
 		return

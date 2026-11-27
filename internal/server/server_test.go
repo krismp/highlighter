@@ -220,6 +220,25 @@ func TestRecentListsStatus(t *testing.T) {
 	}
 }
 
+func TestRecentListsAtMostFive(t *testing.T) {
+	e := newEnv(t)
+	st, err := store.New(e.cfg, store.Settings{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range recentLimit + 2 {
+		if _, err := st.SaveSession(store.Session{VideoID: fmt.Sprintf("video%06d", i), Title: fmt.Sprint("Match ", i)}); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(2 * time.Millisecond) // distinct UpdatedAt, newest last
+	}
+	_, data := e.do(t, "GET", "/api/sessions", nil)
+	recent := decode[[]RecentSession](t, data)
+	if len(recent) != recentLimit || recent[0].VideoID != fmt.Sprintf("video%06d", recentLimit+1) {
+		t.Errorf("recent %s; want the %d newest", data, recentLimit)
+	}
+}
+
 func TestParseClips(t *testing.T) {
 	e := newEnv(t)
 	e.open(t)

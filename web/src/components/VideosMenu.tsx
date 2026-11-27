@@ -6,9 +6,7 @@ import { StatusChip } from "@/components/StatusChip";
 import { useRecent } from "@/hooks/useRecent";
 import { unfinished } from "@/lib/api";
 
-const MAX_ROWS = 8;
-
-/** Header menu: recent videos, unfinished ones first, with a badge counting them. */
+/** Header menu: the five most recent videos, unfinished ones first, with a badge counting them. */
 export function VideosMenu() {
   const [open, setOpen] = useState(false);
   const recent = useRecent();
@@ -16,8 +14,7 @@ export function VideosMenu() {
   const count = all.filter((r) => unfinished(r.status)).length;
   const processing = all.some((r) => r.status === "processing");
   const rows = [...all]
-    .sort((a, b) => Number(unfinished(b.status)) - Number(unfinished(a.status)) || b.updatedAt.localeCompare(a.updatedAt))
-    .slice(0, MAX_ROWS);
+    .sort((a, b) => Number(unfinished(b.status)) - Number(unfinished(a.status)) || b.updatedAt.localeCompare(a.updatedAt));
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
       <Popover.Trigger
@@ -56,7 +53,7 @@ export function VideosMenu() {
             )}
             <div className="border-t p-1">
               <Link to="/" hash="recent" onClick={() => setOpen(false)} className="block rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground">
-                See all videos
+                Go to Home
               </Link>
             </div>
           </Popover.Popup>
