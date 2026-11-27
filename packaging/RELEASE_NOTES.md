@@ -1,3 +1,9 @@
+## What's new in 1.3.4
+
+- **Adding a clip after a run shows your clip list.** Before, the last run's results stayed on screen and hid the clip you just added. To see the results again, click **See last results** (or **See progress** while a run is going) above the clip list.
+- **Combine starts fresh after a finished combine.** Opening Combine, or adding videos, after a combine has finished now starts a new line-up instead of showing the old one. The finished file is kept and still listed.
+- **Recent videos are now the five most recent,** on Home and in the **Videos** menu. The menu's link at the bottom now reads **Go to Home**.
+
 ## What's new in 1.3.3
 
 - **Labels can start with a number.** `3 PT: 10:27 - 11:10` is now the play "3 PT" from 10:27 to 11:10. Before, it became a clip at 0:03. `45 dunk` still means a clip at 45 seconds.
